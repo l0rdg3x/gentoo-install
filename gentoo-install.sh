@@ -7,12 +7,17 @@ TIMEZONE_SET="Europe/Rome" #CHANGE: Your timezone: search with "ls -l /usr/share
 LOCALE_GEN_SET="it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8" #CHANGE Search with "cat /usr/share/i18n/SUPPORTED" add separated with \n like in example
 ESELECT_LOCALE_SET="it_IT.UTF8" #CHANGE: Select the eselect locale from ESELECT_LOCALE_SET, The UTF8 one: Example "it_IT.UTF-8" become "it_IT.UTF8" w/o dash like in example
 PLYMOUTH_THEME_SET="solar" #CHANGE: your favourite plymouth theme: https://wiki.gentoo.org/wiki/Plymouth
+<<<<<<< HEAD
+=======
+RAID_SET="y" #CHANGE: "y" or "n" Do you want RAID1?
+>>>>>>> d9a583a (Add raid support [Part1])
 LUKSED="y" #CHANGE: Enable LUKS? "y" or "n"
 DEV_INSTALL="ssd" #CHANGE: "nvme" or "ssd"
 SWAP_G="16G" #CHANGE: SWAP GB
 USER_NAME="l0rdg3x" #CHANGE: non-root username
 ESELECT_PROF="default/linux/amd64/23.0/desktop/plasma/systemd" #CHANGE: Select your preferred profile: "eselect profile list | less" (only systemd profiles work with this script for now) [TODO]
 MIRROR="https://mirror.leaseweb.com/gentoo/releases/amd64/autobuilds" #CHANGE: Your preferred mirror for stage3 download
+<<<<<<< HEAD
 
 if [[ "$DEV_INSTALL" == "nvme" ]]; then
     DISK_INSTALL="/dev/nvme0n1" #CHANGE: With your nvme dev
@@ -23,6 +28,42 @@ if [[ "$DEV_INSTALL" == "ssd" ]]; then
     DISK_INSTALL="/dev/sda" #CHANGE: With your ssd dev
     EFI_PART="${DISK_INSTALL}1" #DO NOT CHANGE
     ROOT_PART="${DISK_INSTALL}2" #DO NOT CHANGE
+=======
+EFI_SIZE="512MiB" #DO NOT CHANGE
+BOOT_SIZE="1GiB" #DO NOT CHANGE
+
+if [[ "$DEV_INSTALL" == "nvme" ]]; then
+    [[ "$RAID_SET" == "y" ]]; then
+        DISK_INSTALL1="/dev/nvme0n1" #CHANGE: With your nvme dev1 [RAID]
+        DISK_INSTALL2="/dev/nvme0n2" #CHANGE: With your nvme dev2 [RAID]
+        EFI_PART1="${DISK_INSTALL1}p1" #DO NOT CHANGE
+        BOOT_PART1="${DISK_INSTALL1}p2" #DO NOT CHANGE
+        ROOT_PART1="${DISK_INSTALL1}p3" #DO NOT CHANGE
+        EFI_PART2="${DISK_INSTALL2}p1" #DO NOT CHANGE
+        BOOT_PART2="${DISK_INSTALL2}p2" #DO NOT CHANGE
+        ROOT_PART2="${DISK_INSTALL2}p3" #DO NOT CHANGE
+    fi
+    DISK_INSTALL="/dev/nvme0n1" #CHANGE: With your nvme dev
+    EFI_PART="${DISK_INSTALL}p1" #DO NOT CHANGE
+    BOOT_PART="${DISK_INSTALL}p2" #DO NOT CHANGE
+    ROOT_PART="${DISK_INSTALL}p3" #DO NOT CHANGE
+fi
+if [[ "$DEV_INSTALL" == "ssd" ]]; then
+    [[ "$RAID_SET" == "y" ]]; then
+        DISK_INSTALL1="/dev/sda" #CHANGE: With your ssd dev1 [RAID]
+        DISK_INSTALL2="/dev/sdb" #CHANGE: With your ssd dev2 [RAID]
+        EFI_PART1="${DISK_INSTALL1}1" #DO NOT CHANGE
+        BOOT_PART1="${DISK_INSTALL1}2" #DO NOT CHANGE
+        ROOT_PART1="${DISK_INSTALL1}3" #DO NOT CHANGE
+        EFI_PART2="${DISK_INSTALL2}1" #DO NOT CHANGE
+        BOOT_PART2="${DISK_INSTALL2}2" #DO NOT CHANGE
+        ROOT_PART2="${DISK_INSTALL2}3" #DO NOT CHANGE
+    fi
+    DISK_INSTALL="/dev/sda" #CHANGE: With your ssd dev
+    EFI_PART="${DISK_INSTALL}1" #DO NOT CHANGE
+    BOOT_PART="${DISK_INSTALL}2" #DO NOT CHANGE
+    ROOT_PART="${DISK_INSTALL}3" #DO NOT CHANGE
+>>>>>>> d9a583a (Add raid support [Part1])
 fi
 ###############################
 
@@ -114,8 +155,14 @@ EOF
     emerge sys-fs/ntfs3g
     emerge sys-fs/zfs
     emerge sys-block/io-scheduler-udev-rules
+<<<<<<< HEAD
     echo "sys-kernel/installkernel grub dracut" > /etc/portage/package.use/installkernel
     if [[ "$LUKSED" == "y" ]]; then
+=======
+    emerge sys-fs/mdadm
+    echo "sys-kernel/installkernel grub dracut" > /etc/portage/package.use/installkernel
+    if [[ "$LUKSED" == "y" ]]; then ######################################                SEI QUI!!!!
+>>>>>>> d9a583a (Add raid support [Part1])
         echo "sys-apps/systemd cryptsetup" > /etc/portage/package.use/systemd
         LUKS_UUID=$(blkid "$ROOT_PART" | grep -oP ' UUID="\K[^"]+')
         ROOT_UUID=$(blkid /dev/mapper/root | grep -oP ' UUID="\K[^"]+')
@@ -202,6 +249,7 @@ fi
 echo "[*] [NO-CHROOT] Clock synchronization"
 chronyd -q
 
+<<<<<<< HEAD
 echo "[*] [NO-CHROOT] Deleting partition table"
 sgdisk --zap-all "$DISK_INSTALL"
 
@@ -236,6 +284,98 @@ else
     mkfs.btrfs "$ROOT_PART"
     echo "[*] [NO-CHROOT] Mounting"
     mount "$ROOT_PART" /mnt/gentoo
+=======
+# Case RAID
+[[ "$RAID_SET" == "y" ]]; then
+    for DISK in $DISK_INSTALL1 $DISK_INSTALL2; do
+        echo "[*] [NO-CHROOT] Deleting partition table"
+        sgdisk --zap-all "$DISK"
+
+        echo "[*] [NO-CHROOT] Creating a new GPT table"
+        parted -s "$DISK" mklabel gpt
+
+        echo "[*] [NO-CHROOT] Creating $EFI_SIZE EFI partition"
+        parted -s "$DISK" mkpart ESP fat32 1MiB $EFI_SIZE
+        parted -s "$DISK" set 1 esp on
+
+        echo "[*] [NO-CHROOT] Creating $BOOT_SIZE boot partition"
+        parted -s "$DISK" mkpart primary ext4 $EFI_SIZE $(echo "$EFI_SIZE + $BOOT_SIZE" | bc)
+
+        echo "[*] [NO-CHROOT] Creating Linux root partition with remaining disk space"
+        parted -s "$DISK" mkpart primary $(echo "$EFI_SIZE + $BOOT_SIZE" | bc) 100%
+        parted -s "$DISK" type 2 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
+
+        echo "[*] ------RAID /boot"
+        mdadm --create /dev/md0 --level=1 --raid-devices=2 ${DISK1}2 ${DISK2}2 --metadata=1.0
+        mkfs.ext4 /dev/md0
+        
+        # Case RAID + LUKS
+        if [[ "$LUKSED" == "y" ]]; then
+            echo "[*] [NO-CHROOT] [LUKS] Encrypting root disk with LUKS: Create unlock password"
+            cryptsetup luksFormat --key-size 512 "${DISK}3" || { echo "Errore password!"; exit 1; }
+
+            echo "[*] [NO-CHROOT] [LUKS] Mounting root disk with LUKS: Enter unlock password"
+            if [[ "$DISK" == "$DISK_INSTALL1" ]]; then
+                if [[ "$DEV_INSTALL" == "ssd" ]]; then
+                    cryptsetup luksOpen "${DISK}3" root1 || { echo "Errore password!"; exit 1; }
+                else
+                    cryptsetup luksOpen "${DISK}p3" root1 || { echo "Errore password!"; exit 1; }
+                fi
+            fi
+            if [[ "$DISK" == "$DISK_INSTALL2" ]]; then
+                cryptsetup luksOpen "${DISK}3" root2 || { echo "Errore password!"; exit 1; }
+            fi
+        fi
+    done
+    
+    if [[ "$LUKSED" == "y" ]]; then
+        echo "[*] [NO-CHROOT] [LUKS] Btrfs formatting"
+        mkfs.btrfs -m raid1 -d raid1 /dev/mapper/root1 /dev/mapper/root2
+
+        echo "[*] [NO-CHROOT] [LUKS] Mounting"
+        mount /dev/mapper/root1 /mnt/gentoo
+    else
+        echo "[*] [NO-CHROOT] [LUKS----] Btrfs formatting"
+        mkfs.btrfs -m raid1 -d raid1 "$ROOT_PART1" "$ROOT_PART2"
+        mount "$ROOT_PART1" /mnt/gentoo
+    done
+else #CASE NO RAID
+    echo "[*] [NO-CHROOT] Deleting partition table"
+    sgdisk --zap-all "$DISK_INSTALL"
+
+    echo "[*] [NO-CHROOT] Creating a new GPT table"
+    parted -s "$DISK_INSTALL" mklabel gpt
+
+    echo "[*] [NO-CHROOT] Creating $EFI_SIZE EFI partition"
+    parted -s "$DISK_INSTALL" mkpart ESP fat32 1MiB $EFI_SIZE
+    parted -s "$DISK_INSTALL" set 1 esp on
+
+    echo "[*] [NO-CHROOT] Creating $BOOT_SIZE boot partition"
+    parted -s "$DISK_INSTALL" mkpart primary ext4 $EFI_SIZE $(echo "$EFI_SIZE + $BOOT_SIZE" | bc)
+
+    echo "[*] [NO-CHROOT] Creating Linux root partition with remaining disk space"
+    parted -s "$DISK_INSTALL" mkpart primary $(echo "$EFI_SIZE + $BOOT_SIZE" | bc) 100%
+    parted -s "$DISK_INSTALL" type 2 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
+
+    if [[ "$LUKSED" == "y" ]]; then
+        echo "[*] [NO-CHROOT] [LUKS] Encrypting root disk with LUKS: Create unlock password"
+        cryptsetup luksFormat --key-size 512 "$ROOT_PART" || { echo "Errore password!"; exit 1; }
+
+        echo "[*] [NO-CHROOT] [LUKS] Mounting root disk with LUKS: Enter unlock password"
+        cryptsetup luksOpen "$ROOT_PART" root || { echo "Errore password!"; exit 1; }
+
+        echo "[*] [NO-CHROOT] [LUKS] Btrfs formatting"
+        mkfs.btrfs /dev/mapper/root
+
+        echo "[*] [NO-CHROOT] [LUKS] Mounting"
+        mount /dev/mapper/root /mnt/gentoo
+    else
+        echo "[*] [NO-CHROOT] Btrfs formatting"
+        mkfs.btrfs "$ROOT_PART"
+        echo "[*] [NO-CHROOT] Mounting"
+        mount "$ROOT_PART" /mnt/gentoo
+    fi
+>>>>>>> d9a583a (Add raid support [Part1])
 fi
 
 cd /mnt/gentoo
@@ -245,6 +385,7 @@ done
 cd ~
 umount /mnt/gentoo
 
+<<<<<<< HEAD
 if [[ "$LUKSED" == "y" ]]; then
     echo "[*] [NO-CHROOT] [LUKS] Remounting subvolumes"
     mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@ /dev/mapper/root /mnt/gentoo
@@ -253,6 +394,29 @@ if [[ "$LUKSED" == "y" ]]; then
     mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@log   /dev/mapper/root /mnt/gentoo/var/log
     mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@cache /dev/mapper/root /mnt/gentoo/var/cache
     mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@swap  /dev/mapper/root /mnt/gentoo/swap
+=======
+
+
+
+if [[ "$LUKSED" == "y" ]]; then
+    if [[ "$RAID_SET" == "y" ]]; then
+        echo "[*] [NO-CHROOT] [LUKS] Remounting subvolumes"
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@ /dev/mapper/root1 /mnt/gentoo
+        mkdir -p /mnt/gentoo/{boot,home,var/cache,var/log,swap}
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@home  /dev/mapper/root1 /mnt/gentoo/home
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@log   /dev/mapper/root1 /mnt/gentoo/var/log
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@cache /dev/mapper/root1 /mnt/gentoo/var/cache
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@swap  /dev/mapper/root1 /mnt/gentoo/swap
+    else
+        echo "[*] [NO-CHROOT] [LUKS] Remounting subvolumes"
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@ /dev/mapper/root /mnt/gentoo
+        mkdir -p /mnt/gentoo/{boot,home,var/cache,var/log,swap}
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@home  /dev/mapper/root /mnt/gentoo/home
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@log   /dev/mapper/root /mnt/gentoo/var/log
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@cache /dev/mapper/root /mnt/gentoo/var/cache
+        mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@swap  /dev/mapper/root /mnt/gentoo/swap
+    fi
+>>>>>>> d9a583a (Add raid support [Part1])
 else
     echo "[*] [NO-CHROOT] Remounting subvolumes"
     mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@ "$ROOT_PART" /mnt/gentoo
@@ -263,8 +427,14 @@ else
     mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@swap  "$ROOT_PART" /mnt/gentoo/swap
 fi
 
+<<<<<<< HEAD
 echo "[*] [NO-CHROOT] Mounting EFI"
 mount "$EFI_PART" /mnt/gentoo/boot
+=======
+echo "[*] [NO-CHROOT] Mounting /boot + EFI"
+mount /dev/md0 /mnt/gentoo/boot
+mount "$EFI_PART" /mnt/gentoo/boot/efi
+>>>>>>> d9a583a (Add raid support [Part1])
 
 echo "[*] [NO-CHROOT] Creating swap file"
 cd /mnt/gentoo
