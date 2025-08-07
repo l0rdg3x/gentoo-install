@@ -121,7 +121,7 @@ The script creates the following Btrfs subvolumes:
 
 The script creates a GPT partition table with:
 
-- **Partition 1**: 1GiB EFI System Partition (FAT32)
+- **Partition 1**: 512MiB EFI System Partition (FAT32)
 - **Partition 2**: Remaining space for Linux root (Btrfs)
 
 ## Security Features
@@ -187,8 +187,6 @@ After successful installation and reboot:
 - [ ] Modules and kernel signing
 - [ ] Add OpenRC profile support
 - [ ] Implement multi-architecture support (ARM64)
-- [ ] Implement RAID configuration support
-- [ ] Implement custom kernel configuration (Maybe)
 
 ## Contributing
 
