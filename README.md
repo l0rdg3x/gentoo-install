@@ -1,4 +1,4 @@
-# Gentoo Installation Script
+# Gentoo Installation Script (Mostly made for myself)
 
 An installation script for Gentoo Linux with systemd support, featuring LUKS encryption, Btrfs filesystem, and Plymouth boot splash.
 Desktop use only. (Read TODO)
@@ -15,7 +15,7 @@ Desktop use only. (Read TODO)
 - **LUKS Encryption**: Optional full disk encryption support
 - **Btrfs Filesystem**: Modern filesystem with subvolumes for better organization and snapshot
 - **Plymouth Boot Splash**: Customizable boot splash screen
-- **Systemd Support**: Only systemd profiles supported (OpenRC support planned)
+- **Systemd Support**: Only systemd profiles supported (OpenRC support (maybe) planned)
 - **Binary Packages**: Utilizes Gentoo's binary package repository for faster installation (Read TODO)
 - **Hardware Support**: Supports both NVMe and SATA SSD drives
 
@@ -33,9 +33,6 @@ Desktop use only. (Read TODO)
 Boot from the Gentoo LiveCD or minimal installation ISO, copy the script to your system and do all as root user:
 
 ```bash
-# Copy the script to /root/gentoo-install.sh
-cp gentoo-install.sh /root/gentoo-install.sh
-
 # Make it executable
 chmod +x /root/gentoo-install.sh
 ```
@@ -142,7 +139,7 @@ The script includes a basic `make.conf` with:
 ### Package Selection
 
 Default packages include:
-- `gentoo-kernel-bin`: Pre-compiled kernel
+- `gentoo-kernel`: Pre-compiled kernel or bin version
 - `systemd`: System and service manager
 - `plymouth`: Boot splash screen
 - `btrfs-progs`: Btrfs utilities
@@ -176,13 +173,13 @@ After successful installation and reboot:
 
 ### More important (not in order)
 
-- [ ] Option for setup full source based (ignoring binhost)
+- [x] Option for setup full source based (ignoring binhost)
 - [ ] Option for server use or desktop use (different stage3)
 - [ ] Implement Secureboot
 - [ ] Implement precheck before installation starts
 - [ ] Binhost: Select for packages "x86-64" or "x86-64-v3"
 
-### Less important (not in order)
+### Less important (not in order) (maybe?)
 
 - [ ] Modules and kernel signing
 - [ ] Add OpenRC profile support

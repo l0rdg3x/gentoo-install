@@ -12,6 +12,7 @@ LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
 LUKS_PASSWORD="1" #CHANGE: with your secure luks password
 DEV_INSTALL="ssd" #CHANGE: "nvme" or "ssd"
 SWAP_G="16G" #CHANGE: SWAP GB
+BINHOST="y" #CHANGE: 'n' if you want Gentoo full source compiled, 'y' if you want use binary packages
 ROOT_PASS="Passw0rdd!" #CHANGE: Password for root user
 USER_NAME="l0rdg3x" #CHANGE: non-root username
 USER_PASS="Passw0rdd!" #CHANGE: Password for non root user 
@@ -60,7 +61,7 @@ MAKEOPTS="-j4 -l4"
 
 EMERGE_DEFAULT_OPTS="--jobs 4 --load-average 4"
 
-FEATURES="${FEATURES} getbinpkg candy parallel-fetch parallel-install binpkg-request-signature"
+FEATURES="${FEATURES} candy parallel-fetch parallel-install"
 
 USE="dist-kernel"
 
@@ -81,13 +82,16 @@ EOF
     sleep 3
     mirrorselect -i -o >> /etc/portage/make.conf
 
-    mkdir -p /etc/portage/binrepos.conf/
-    cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF #CHANGE: This is the default binhost repo, change if you want: https://www.gentoo.org/downloads/mirrors/ choose "x86-64-v3" for modern CPU
+    if [[ "$BINHOST" == "y" ]]; then
+        sed -i "s/parallel-install/parallel-install getbinpkg binpkg-request-signature/" /etc/portage/make.conf
+        mkdir -p /etc/portage/binrepos.conf/
+        cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF #CHANGE: This is the default binhost repo, change if you want: https://www.gentoo.org/downloads/mirrors/ choose "x86-64-v3" for modern CPU
 [binhost]
 priority = 9999
 sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64-v3
 EOF
-    getuto
+        getuto
+    fi
 
     echo "[*] [CHROOT] Setup CPU flags"
     mkdir -p /var/cache/ccache
@@ -122,7 +126,11 @@ EOF
     
     emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm
     emerge sys-apps/systemd
-    emerge sys-kernel/gentoo-kernel-bin
+    if [[ "$BINHOST" == "y" ]]; then
+        emerge sys-kernel/gentoo-kernel-bin
+    else
+        emerge sys-kernel/gentoo-kernel
+    fi
     emerge sys-kernel/linux-firmware
     emerge sys-firmware/sof-firmware
     if [[ "$LUKSED" == "y" ]]; then
@@ -145,6 +153,10 @@ EOF
 
     emerge sys-kernel/installkernel
     emerge sys-fs/zfs
+
+    emerge sys-apps/zram-generator
+    echo '[zram0]' > /etc/systemd/zram-generator.conf
+
     emerge sys-fs/genfstab
     genfstab -U / >> /etc/fstab
     echo "$HOSTNAME" > /etc/hostname
@@ -166,7 +178,11 @@ EOF
 
     grub-install --efi-directory=/boot/efi --bootloader-id=gentoo --removable --recheck --no-nvram --boot-directory=/boot
 
-    emerge --config sys-kernel/gentoo-kernel-bin
+    if [[ "$BINHOST" == "y" ]]; then
+        emerge --config sys-kernel/gentoo-kernel-bin
+    else
+        emerge --config sys-kernel/gentoo-kernel
+    fi
     grub-mkconfig -o /boot/grub/grub.cfg
 
     echo "[!] [CHROOT] Set password for root user:"
