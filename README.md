@@ -1,4 +1,5 @@
 # Gentoo Installation Script (Mostly made for myself)
+# The worst script ever :D
 
 An installation script for Gentoo Linux with systemd support, featuring LUKS encryption, Btrfs filesystem, and Plymouth boot splash.
 Desktop use only. (Read TODO)
