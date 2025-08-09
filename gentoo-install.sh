@@ -85,7 +85,7 @@ EOF
     if [[ "$BINHOST" == "y" ]]; then
         sed -i "s/parallel-install/parallel-install getbinpkg binpkg-request-signature/" /etc/portage/make.conf
         mkdir -p /etc/portage/binrepos.conf/
-        cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF #CHANGE: This is the default binhost repo, change if you want: https://www.gentoo.org/downloads/mirrors/ choose "x86-64-v3" for modern CPU
+        cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF
 [binhost]
 priority = 9999
 sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64-v3
@@ -115,6 +115,7 @@ EOF
     cat > /etc/portage/package.accept_keywords/pkgs <<EOF
 sys-kernel/gentoo-kernel-bin ~amd64
 sys-kernel/gentoo-kernel ~amd64
+virtual/dist-kernel ~amd64
 EOF
 
     if [[ "$LUKSED" == "y" ]]; then
