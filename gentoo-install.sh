@@ -112,6 +112,11 @@ EOF
     echo "[*] [CHROOT] Base installation"
     echo "sys-kernel/installkernel grub dracut" > /etc/portage/package.use/installkernel
     echo "sys-boot/plymouth systemd" > /etc/portage/package.use/plymouth
+    cat > /etc/portage/package.accept_keywords/pkgs <<EOF
+sys-kernel/gentoo-kernel-bin ~amd64
+sys-kernel/gentoo-kernel ~amd64
+EOF
+
     if [[ "$LUKSED" == "y" ]]; then
         echo "sys-apps/systemd cryptsetup" > /etc/portage/package.use/systemd
         LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
