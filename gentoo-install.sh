@@ -139,26 +139,22 @@ EOF
     fi
     emerge sys-kernel/linux-firmware
     emerge sys-firmware/sof-firmware
+    mkdir -p /etc/dracut.conf.d
     if [[ "$LUKSED" == "y" ]]; then
-        echo "kernel_cmdline+=\" root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET rd.luks.uuid=$LUKS_UUID \"" >> /etc/dracut.conf
-        echo 'add_dracutmodules+=" btrfs crypt dm rootfs-block resume "' >> /etc/dracut.conf
-        echo 'install_items+=" /etc/crypttab "' >> /etc/dracut.conf
-        echo 'install_items+=" /root/swap.key "' >> /etc/dracut.conf
-        echo 'hostonly=no' >> /etc/dracut.conf
-        echo 'use_fstab="yes"' >> /etc/dracut.conf
-        echo 'add_fstab+=" /etc/fstab "' >> /etc/dracut.conf
-        echo 'persistent_policy="by-uuid"' >> /etc/dracut.conf
+        echo "kernel_cmdline+=\" root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET rd.luks.uuid=$LUKS_UUID \"" >> /etc/dracut.conf.d/default.conf
+        echo 'add_dracutmodules+=" btrfs crypt rootfs-block resume "' >> /etc/dracut.conf.d/default.conf
+        echo 'hostonly="yes"' >> /etc/dracut.conf.d/default.conf
+        echo 'persistent_policy="by-uuid"' >> /etc/dracut.conf.d/default.conf
+        echo 'use_systemd="yes"' >> /etc/dracut.conf.d/default.conf
     else
-        echo "kernel_cmdline+=\" root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET \"" >> /etc/dracut.conf
-        echo 'add_dracutmodules+=" btrfs dm rootfs-block resume "' >> /etc/dracut.conf
-        echo 'hostonly=no' >> /etc/dracut.conf
-        echo 'use_fstab="yes"' >> /etc/dracut.conf
-        echo 'add_fstab+=" /etc/fstab "' >> /etc/dracut.conf
-        echo 'persistent_policy="by-uuid"' >> /etc/dracut.conf
+        echo "kernel_cmdline+=\" root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET \"" >> /etc/dracut.conf.d/default.conf
+        echo 'add_dracutmodules+=" btrfs rootfs-block resume "' >> /etc/dracut.conf.d/default.conf
+        echo 'hostonly=yes' >> /etc/dracut.conf.d/default.conf
+        echo 'persistent_policy="by-uuid"' >> /etc/dracut.conf.d/default.conf
+        echo 'use_systemd="yes"' >> /etc/dracut.conf.d/default.conf
     fi
 
     emerge sys-kernel/installkernel
-    emerge sys-fs/zfs
 
     emerge sys-apps/zram-generator
     echo '[zram0]' > /etc/systemd/zram-generator.conf
