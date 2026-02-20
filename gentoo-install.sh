@@ -7,6 +7,10 @@ TIMEZONE_SET="Europe/Rome" #CHANGE: Your timezone: search with "ls -l /usr/share
 LOCALE_GEN_SET="it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8" #CHANGE Search with "cat /usr/share/i18n/SUPPORTED" add separated with \n like in example
 ESELECT_LOCALE_SET="it_IT.UTF8" #CHANGE: Select the eselect locale from ESELECT_LOCALE_SET, The UTF8 one: Example "it_IT.UTF-8" become "it_IT.UTF8" w/o dash like in example
 SYSTEMD_LOCALE="it" #CHANGE: Systemd locale
+CPU_MICROCODE="y" #CHANGE: Install or not CPU microcode
+SECUREBOOT_MODSIGN="y" #CHANGE: Enable Secureboot + Modules Sign
+KERNEL_KEY_PATH="/etc/sb_kernel_key.pem" #Change: if you want to change directory for Secureboot and Modules Sign key 
+VIDEOCARDS="intel" #CHANGE: Your video cards: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base 
 PLYMOUTH_THEME_SET="solar" #CHANGE: your favourite plymouth theme: https://wiki.gentoo.org/wiki/Plymouth
 LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
 LUKS_PASSWORD="1" #CHANGE: with your secure luks password
@@ -45,23 +49,23 @@ if [[ "${1:-}" == "--chroot" ]]; then
     emerge --oneshot app-portage/mirrorselect
 
     echo "[*] [CHROOT] Generic make.conf configuration"
-    cat > /etc/portage/make.conf <<'EOF' #CHANGE: USE, flags or VIDEO_CARDS, this is nearly to default
+    cat > /etc/portage/make.conf <<EOF
 # ====================
 # = GENTOO MAKE.CONF =
 # ====================
 
 COMMON_FLAGS="-march=native -O2 -pipe"
-CFLAGS="${COMMON_FLAGS}"
-CXXFLAGS="${COMMON_FLAGS}"
-FCFLAGS="${COMMON_FLAGS}"
-FFLAGS="${COMMON_FLAGS}"
-RUSTFLAGS="${RUSTFLAGS} -C target-cpu=native"
+CFLAGS="\${COMMON_FLAGS}"
+CXXFLAGS="\${COMMON_FLAGS}"
+FCFLAGS="\${COMMON_FLAGS}"
+FFLAGS="\${COMMON_FLAGS}"
+RUSTFLAGS="\${RUSTFLAGS} -C target-cpu=native"
 
 MAKEOPTS="-j4 -l4"
 
 EMERGE_DEFAULT_OPTS="--jobs 4 --load-average 4"
 
-FEATURES="${FEATURES} candy parallel-fetch parallel-install"
+FEATURES="\${FEATURES} candy parallel-fetch parallel-install"
 
 USE="dist-kernel"
 
@@ -69,7 +73,7 @@ ACCEPT_LICENSE="*"
 
 GRUB_PLATFORMS="efi-64"
 
-VIDEO_CARDS=""
+VIDEO_CARDS="$VIDEOCARDS"
 
 # This sets the language of build output to English.
 # Please keep this setting intact when reporting bugs.
@@ -77,13 +81,36 @@ LC_MESSAGES=C.utf8
 
 
 EOF
-
+        
     echo "[*] [CHROOT] Select Mirror list (wait 3 secs)"
     sleep 3
     mirrorselect -i -o >> /etc/portage/make.conf
+    
+    EXTRA_USE=""
+
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        EXTRA_USE+=" modules-sign secureboot"
+        openssl req -new -noenc -utf8 -sha256 -x509 -outform PEM -out $KERNEL_KEY_PATH -keyout $KERNEL_KEY_PATH
+        chown root:root $KERNEL_KEY_PATH
+        chmod 400 $KERNEL_KEY_PATH
+
+        cat >> /etc/portage/make.conf <<EOF
+
+# Optionally, to use custom signing keys.
+MODULES_SIGN_KEY="${KERNEL_KEY_PATH}"
+MODULES_SIGN_CERT="${KERNEL_KEY_PATH}"
+MODULES_SIGN_HASH="sha512"
+
+# Optionally, to boot with secureboot enabled.
+SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}"
+SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}"
+
+EOF
+    fi
 
     if [[ "$BINHOST" == "y" ]]; then
-        sed -i "s/parallel-install/parallel-install getbinpkg binpkg-request-signature/" /etc/portage/make.conf
+        EXTRA_USE+=" getbinpkg binpkg-request-signature"
+    
         mkdir -p /etc/portage/binrepos.conf/
         cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF
 [binhost]
@@ -91,6 +118,10 @@ priority = 9999
 sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64-v3
 EOF
         getuto
+    fi
+
+    if [[ -n "$EXTRA_USE" ]]; then
+        sed -i "s/dist-kernel/dist-kernel${EXTRA_USE}/" /etc/portage/make.conf
     fi
 
     echo "[*] [CHROOT] Setup CPU flags"
@@ -155,6 +186,10 @@ EOF
     fi
 
     emerge sys-kernel/installkernel
+    
+    if [[ "$CPU_MICROCODE" == "y" ]]; then
+        emerge sys-firmware/intel-microcode
+    fi
 
     emerge sys-apps/zram-generator
     echo '[zram0]' > /etc/systemd/zram-generator.conf

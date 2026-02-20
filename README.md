@@ -176,13 +176,13 @@ After successful installation and reboot:
 
 - [x] Option for setup full source based (ignoring binhost)
 - [ ] Option for server use or desktop use (different stage3)
-- [ ] Implement Secureboot
+- [x] Implement Secureboot
 - [ ] Implement precheck before installation starts
 - [ ] Binhost: Select for packages "x86-64" or "x86-64-v3"
 
 ### Less important (not in order) (maybe?)
 
-- [ ] Modules and kernel signing
+- [x] Modules and kernel signing
 - [ ] Add OpenRC profile support
 - [ ] Implement multi-architecture support (ARM64)
 
