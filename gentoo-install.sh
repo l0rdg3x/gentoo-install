@@ -9,7 +9,7 @@ ESELECT_LOCALE_SET="it_IT.UTF8" #CHANGE: Select the eselect locale from ESELECT_
 SYSTEMD_LOCALE="it" #CHANGE: Systemd locale
 CPU_MICROCODE="y" #CHANGE: Install or not CPU microcode
 SECUREBOOT_MODSIGN="y" #CHANGE: Enable Secureboot + Modules Sign
-KERNEL_KEY_PATH="/etc" #Change: if you want to change directory for Secureboot and Modules Sign key 
+KERNEL_KEY_PATH="/etc/kernel/certs/linux"
 VIDEOCARDS="intel" #CHANGE: Your video cards: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base 
 PLYMOUTH_THEME_SET="solar" #CHANGE: your favourite plymouth theme: https://wiki.gentoo.org/wiki/Plymouth
 LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
@@ -90,23 +90,28 @@ EOF
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         EXTRA_USE+=" modules-sign secureboot"
-        openssl req -new -noenc -utf8 -sha256 -x509 -outform PEM -out "$KERNEL_KEY_PATH/sb_kernel_key.pem" -keyout "$KERNEL_KEY_PATH/sb_kernel_key.pem"
-        chown root:root "$KERNEL_KEY_PATH/sb_kernel_key.pem"
-        chmod 400 "$KERNEL_KEY_PATH/sb_kernel_key.pem"
-        openssl x509 -in "$KERNEL_KEY_PATH/sb_kernel_key.pem" -inform PEM -out "$KERNEL_KEY_PATH/sb_kernel_key.der" -outform DER
-        chown root:root "$KERNEL_KEY_PATH/sb_kernel_key.der"
-        chmod 400 "$KERNEL_KEY_PATH/sb_kernel_key.der"
+        mkdir -p $KERNEL_KEY_PATH
+        openssl req -new -nodes -sha256 -x509 -newkey rsa:2048 -days 36500 -addext extendedKeyUsage=1.3.6.1.5.5.7.3.3 -subj '/CN=Gentoo Secure Boot/' -out /etc/kernel/certs/linux/signing_key.cert -keyout /etc/kernel/certs/linux/signing_key.asc
+        cat /etc/kernel/certs/linux/signing_key.asc /etc/kernel/certs/linux/signing_key.cert > /etc/kernel/certs/linux/signing_key.pem
+        openssl x509 -outform der -in /etc/kernel/certs/linux/signing_key.pem -out /etc/kernel/certs/linux/signing_key.x509
+        openssl x509 -in /etc/kernel/certs/linux/signing_key.cert -outform der -out /etc/kernel/certs/linux/signing_key.der
+        chmod -R 600 /etc/kernel/certs/linux/
+
+        cat > /etc/env.d/99grub <<EOF
+GRUB_CFG=/efi/EFI/Gentoo/grub.cfg
+EOF
+        env-update
 
         cat >> /etc/portage/make.conf <<EOF
 
 # Optionally, to use custom signing keys.
-MODULES_SIGN_KEY="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
-MODULES_SIGN_CERT="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
+MODULES_SIGN_KEY="${KERNEL_KEY_PATH}/signing_key.pem"
+MODULES_SIGN_CERT="${KERNEL_KEY_PATH}/signing_key.pem"
 MODULES_SIGN_HASH="sha512"
 
 # Optionally, to boot with secureboot enabled.
-SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
-SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
+SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}/signing_key.pem"
+SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}/signing_key.pem"
 
 EOF
     fi
@@ -190,14 +195,10 @@ EOF
 
     emerge sys-kernel/installkernel
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        emerge sys-boot/shim sys-boot/mokutil sys-boot/efibootmgr
-        mkdir -p /boot/efi/EFI/BOOT
-        cp /usr/share/shim/BOOTX64.EFI /boot/efi/EFI/BOOT/shimx64.efi 
-        cp /usr/share/shim/mmx64.efi /boot/efi/EFI/BOOT/mmx64.efi 
-        cp /usr/lib/grub/grub-x86_64.efi.signed /boot/efi/EFI/BOOT/grubx64.efi
-        mokutil --import "$KERNEL_KEY_PATH/sb_kernel_key.der" --ignore-keyring
-        echo 'GRUB_CFG=/boot/efi/EFI/BOOT/grub.cfg' >> /etc/env.d/99grub
-        env-update
+        emerge sys-boot/grub sys-boot/mokutil sys-boot/efibootmgr
+        mkdir -p /boot/EFI/BOOT
+        mokutil --import /etc/kernel/certs/linux/signing_key.der --ignore-keyring
+        cp /etc/kernel/certs/linux/signing_key.der /boot/ENROLL_THIS_KEY_IN_MOKMANAGER.der
     fi
 
     if [[ "$CPU_MICROCODE" == "y" ]]; then
@@ -205,7 +206,14 @@ EOF
     fi
 
     emerge sys-apps/zram-generator
-    echo '[zram0]' > /etc/systemd/zram-generator.conf
+    mkdir /etc/systemd/zram-generator.conf.d
+    cat > /etc/systemd/zram-generator.conf.d/zram0-swap.conf <<EOF
+[zram0]
+zram-size = ram / 2
+compression-algorithm = zstd
+swap-priority = 100
+fs-type = swap
+EOF
 
     emerge sys-fs/genfstab
     genfstab -U / >> /etc/fstab
@@ -226,7 +234,7 @@ EOF
     fi
     sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' /etc/default/grub
 
-    grub-install --efi-directory=/boot/efi --bootloader-id=gentoo --removable --recheck --no-nvram --boot-directory=/boot
+    grub-install --efi-directory=/boot --bootloader-id=gentoo --removable --recheck --no-nvram --boot-directory=/boot
 
     if [[ "$BINHOST" == "y" ]]; then
         emerge --config sys-kernel/gentoo-kernel-bin
@@ -235,8 +243,7 @@ EOF
     fi
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        efibootmgr --create --disk $DISK_INSTALL --part 1 --loader '\EFI\BOOT\shimx64.efi' --label 'GRUB via Shim' --unicode
-        grub-mkconfig -o /boot/efi/EFI/BOOT/grub.cfg
+        grub-mkconfig -o /boot/EFI/BOOT/grub.cfg
     else
         grub-mkconfig -o /boot/grub/grub.cfg
     fi
@@ -279,13 +286,12 @@ EOF
     rm /stage3-*.tar.*
 
     echo "[*] [CHROOT] Done. You can now type 'exit', unmount everything and reboot"
-
+    swapoff /swap/swap.img
     exit 0
 fi
 
 #BEGINNING
 echo "[*] [NO-CHROOT] Clock synchronization"
-killall chronyd
 chronyd -q
 
 echo "[*] [NO-CHROOT] Deleting partition table"
@@ -355,9 +361,7 @@ else
     mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@swap  "$ROOT_PART" /mnt/gentoo/swap
 fi
 
-mkdir -p /mnt/gentoo/boot/efi
-
-mount "$EFI_PART" /mnt/gentoo/boot/efi
+mount "$EFI_PART" /mnt/gentoo/boot
 
 echo "[*] [NO-CHROOT] Creating swap file"
 cd /mnt/gentoo
