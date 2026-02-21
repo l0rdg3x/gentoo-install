@@ -9,7 +9,7 @@ ESELECT_LOCALE_SET="it_IT.UTF8" #CHANGE: Select the eselect locale from ESELECT_
 SYSTEMD_LOCALE="it" #CHANGE: Systemd locale
 CPU_MICROCODE="y" #CHANGE: Install or not CPU microcode
 SECUREBOOT_MODSIGN="y" #CHANGE: Enable Secureboot + Modules Sign
-KERNEL_KEY_PATH="/etc/sb_kernel_key.pem" #Change: if you want to change directory for Secureboot and Modules Sign key 
+KERNEL_KEY_PATH="/etc/" #Change: if you want to change directory for Secureboot and Modules Sign key 
 VIDEOCARDS="intel" #CHANGE: Your video cards: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base 
 PLYMOUTH_THEME_SET="solar" #CHANGE: your favourite plymouth theme: https://wiki.gentoo.org/wiki/Plymouth
 LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
@@ -61,9 +61,9 @@ FCFLAGS="\${COMMON_FLAGS}"
 FFLAGS="\${COMMON_FLAGS}"
 RUSTFLAGS="\${RUSTFLAGS} -C target-cpu=native"
 
-MAKEOPTS="-j4 -l4"
+MAKEOPTS="-j8 -l8"
 
-EMERGE_DEFAULT_OPTS="--jobs 4 --load-average 4"
+EMERGE_DEFAULT_OPTS="--jobs 8 --load-average 8"
 
 FEATURES="\${FEATURES} candy parallel-fetch parallel-install"
 
@@ -90,9 +90,12 @@ EOF
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         EXTRA_USE+=" modules-sign secureboot"
-        openssl req -new -noenc -utf8 -sha256 -x509 -outform PEM -out $KERNEL_KEY_PATH -keyout $KERNEL_KEY_PATH
-        chown root:root $KERNEL_KEY_PATH
-        chmod 400 $KERNEL_KEY_PATH
+        openssl req -new -noenc -utf8 -sha256 -x509 -outform PEM -out "$KERNEL_KEY_PATH/sb_kernel_key.pem" -keyout "$KERNEL_KEY_PATH/sb_kernel_key.pem"
+        chown root:root "$KERNEL_KEY_PATH/sb_kernel_key.pem"
+        chmod 400 "$KERNEL_KEY_PATH/sb_kernel_key.pem"
+        openssl x509 -in "$KERNEL_KEY_PATH/sb_kernel_key.pem" -inform PEM -out "$KERNEL_KEY_PATH/sb_kernel_key.der" -outform DER
+        chown root:root "$KERNEL_KEY_PATH/sb_kernel_key.der"
+        chmod 400 "$KERNEL_KEY_PATH/sb_kernel_key.der"
 
         cat >> /etc/portage/make.conf <<EOF
 
@@ -186,7 +189,16 @@ EOF
     fi
 
     emerge sys-kernel/installkernel
-    
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        emerge sys-boot/shim sys-boot/mokutil sys-boot/efibootmgr
+        cp /usr/share/shim/BOOTX64.EFI /boot/efi/EFI/Gentoo/shimx64.efi 
+        cp /usr/share/shim/mmx64.efi /boot/efi/EFI/Gentoo/mmx64.efi 
+        cp /usr/lib/grub/grub-x86_64.efi.signed /boot/efi/EFI/Gentoo/grubx64.efi
+        mokutil --import "$KERNEL_KEY_PATH/sb_kernel_key.der" --ignore-keyring
+        echo 'GRUB_CFG=/boot/efi/EFI/Gentoo/grub.cfg' >> /etc/env.d/99grub
+        env-update
+    fi
+
     if [[ "$CPU_MICROCODE" == "y" ]]; then
         emerge sys-firmware/intel-microcode
     fi
@@ -220,7 +232,13 @@ EOF
     else
         emerge --config sys-kernel/gentoo-kernel
     fi
-    grub-mkconfig -o /boot/grub/grub.cfg
+
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        efibootmgr --create --disk $DISK_INSTALL --part 1 --loader '\EFI\Gentoo\shimx64.efi' --label 'GRUB via Shim' --unicode
+        grub-mkconfig -o /boot/efi/EFI/Gentoo/grub.cfg
+    else
+        grub-mkconfig -o /boot/grub/grub.cfg
+    fi
 
     echo "[!] [CHROOT] Set password for root user:"
     echo "root:$ROOT_PASS" | chpasswd
