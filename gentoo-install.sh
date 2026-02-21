@@ -9,7 +9,7 @@ ESELECT_LOCALE_SET="it_IT.UTF8" #CHANGE: Select the eselect locale from ESELECT_
 SYSTEMD_LOCALE="it" #CHANGE: Systemd locale
 CPU_MICROCODE="y" #CHANGE: Install or not CPU microcode
 SECUREBOOT_MODSIGN="y" #CHANGE: Enable Secureboot + Modules Sign
-KERNEL_KEY_PATH="/etc/" #Change: if you want to change directory for Secureboot and Modules Sign key 
+KERNEL_KEY_PATH="/etc" #Change: if you want to change directory for Secureboot and Modules Sign key 
 VIDEOCARDS="intel" #CHANGE: Your video cards: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base 
 PLYMOUTH_THEME_SET="solar" #CHANGE: your favourite plymouth theme: https://wiki.gentoo.org/wiki/Plymouth
 LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
@@ -100,13 +100,13 @@ EOF
         cat >> /etc/portage/make.conf <<EOF
 
 # Optionally, to use custom signing keys.
-MODULES_SIGN_KEY="${KERNEL_KEY_PATH}"
-MODULES_SIGN_CERT="${KERNEL_KEY_PATH}"
+MODULES_SIGN_KEY="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
+MODULES_SIGN_CERT="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
 MODULES_SIGN_HASH="sha512"
 
 # Optionally, to boot with secureboot enabled.
-SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}"
-SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}"
+SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
+SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}/sb_kernel_key.pem"
 
 EOF
     fi
@@ -191,11 +191,11 @@ EOF
     emerge sys-kernel/installkernel
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         emerge sys-boot/shim sys-boot/mokutil sys-boot/efibootmgr
-        cp /usr/share/shim/BOOTX64.EFI /boot/efi/EFI/Gentoo/shimx64.efi 
-        cp /usr/share/shim/mmx64.efi /boot/efi/EFI/Gentoo/mmx64.efi 
-        cp /usr/lib/grub/grub-x86_64.efi.signed /boot/efi/EFI/Gentoo/grubx64.efi
+        cp /usr/share/shim/BOOTX64.EFI /boot/efi/EFI/BOOT/shimx64.efi 
+        cp /usr/share/shim/mmx64.efi /boot/efi/EFI/BOOT/mmx64.efi 
+        cp /usr/lib/grub/grub-x86_64.efi.signed /boot/efi/EFI/BOOT/grubx64.efi
         mokutil --import "$KERNEL_KEY_PATH/sb_kernel_key.der" --ignore-keyring
-        echo 'GRUB_CFG=/boot/efi/EFI/Gentoo/grub.cfg' >> /etc/env.d/99grub
+        echo 'GRUB_CFG=/boot/efi/EFI/BOOT/grub.cfg' >> /etc/env.d/99grub
         env-update
     fi
 
@@ -234,8 +234,8 @@ EOF
     fi
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        efibootmgr --create --disk $DISK_INSTALL --part 1 --loader '\EFI\Gentoo\shimx64.efi' --label 'GRUB via Shim' --unicode
-        grub-mkconfig -o /boot/efi/EFI/Gentoo/grub.cfg
+        efibootmgr --create --disk $DISK_INSTALL --part 1 --loader '\EFI\BOOT\shimx64.efi' --label 'GRUB via Shim' --unicode
+        grub-mkconfig -o /boot/efi/EFI/BOOT/grub.cfg
     else
         grub-mkconfig -o /boot/grub/grub.cfg
     fi
@@ -284,6 +284,7 @@ fi
 
 #BEGINNING
 echo "[*] [NO-CHROOT] Clock synchronization"
+killall chronyd
 chronyd -q
 
 echo "[*] [NO-CHROOT] Deleting partition table"
@@ -305,6 +306,8 @@ fi
 echo "[*] [NO-CHROOT] Creating Linux root partition with remaining disk space"
 parted -s "$DISK_INSTALL" mkpart primary 513MiB 100%
 parted -s "$DISK_INSTALL" type 2 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
+
+mkdir /mnt/gentoo
 
 if [[ "$LUKSED" == "y" ]]; then
     echo "[*] [NO-CHROOT] [LUKS] Encrypting root disk with LUKS: Create unlock password"
