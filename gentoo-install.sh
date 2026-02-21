@@ -191,6 +191,7 @@ EOF
     emerge sys-kernel/installkernel
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         emerge sys-boot/shim sys-boot/mokutil sys-boot/efibootmgr
+        mkdir -p /boot/efi/EFI/BOOT
         cp /usr/share/shim/BOOTX64.EFI /boot/efi/EFI/BOOT/shimx64.efi 
         cp /usr/share/shim/mmx64.efi /boot/efi/EFI/BOOT/mmx64.efi 
         cp /usr/lib/grub/grub-x86_64.efi.signed /boot/efi/EFI/BOOT/grubx64.efi
