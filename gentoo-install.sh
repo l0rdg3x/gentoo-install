@@ -208,9 +208,6 @@ EOF
         sign-efi-sig-list -g "$UUID" -k PK.key -c PK.crt PK PK.esl PK.auth
         sign-efi-sig-list -g "$UUID" -k PK.key -c PK.crt KEK KEK.esl KEK.auth
         sign-efi-sig-list -g "$UUID" -k KEK.key -c KEK.crt db db.esl db.auth
-        efi-updatevar -f db.auth db
-        efi-updatevar -f KEK.auth KEK
-        efi-updatevar -f PK.auth PK
         cp db.auth /boot/auth/
         cp KEK.auth /boot/auth/
         cp PK.auth /boot/auth/
@@ -251,10 +248,10 @@ EOF
     sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' /etc/default/grub
 
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --recheck
-    
+
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         mv /boot/EFI/gentoo/grubx64.efi /boot/EFI/gentoo/grubx64.efi.old
-        sbsign --key "$KERNEL_KEY_PATH/db.key" --cert "$KERNEL_KEY_PATH/db.crt" --output /boot/EFI/gentoo/grubx64.efi.old /boot/EFI/gentoo/grubx64.efi
+        sbsign --key "$KERNEL_KEY_PATH/db.key" --cert "$KERNEL_KEY_PATH/db.crt" --output /boot/EFI/gentoo/grubx64.efi /boot/EFI/gentoo/grubx64.efi.old
         rm /boot/EFI/gentoo/grubx64.efi.old
     fi
 
@@ -336,7 +333,7 @@ echo "[*] [NO-CHROOT] Creating Linux root partition with remaining disk space"
 parted -s "$DISK_INSTALL" mkpart primary 513MiB 100%
 parted -s "$DISK_INSTALL" type 2 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
 
-mkdir /mnt/gentoo
+mkdir /mnt/gentoo || echo "Already exist"
 
 if [[ "$LUKSED" == "y" ]]; then
     echo "[*] [NO-CHROOT] [LUKS] Encrypting root disk with LUKS: Create unlock password"
