@@ -100,11 +100,6 @@ EOF
         openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo KEK/" -keyout "$KERNEL_KEY_PATH/KEK.key" -out "$KERNEL_KEY_PATH/KEK.crt" -nodes -days 36500
         openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo DB/" -keyout "$KERNEL_KEY_PATH/db.key" -out "$KERNEL_KEY_PATH/db.crt" -nodes -days 36500
 
-        cat > /etc/env.d/99grub <<EOF
-GRUB_CFG=/efi/EFI/gentoo/grub.cfg
-EOF
-        env-update
-
         cat >> /etc/portage/make.conf <<EOF
 
 # Optionally, to use custom signing keys.
