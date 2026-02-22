@@ -247,12 +247,13 @@ EOF
     fi
     sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' /etc/default/grub
 
-    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --recheck
+    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --boot-directory=/boot
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         mv /boot/EFI/gentoo/grubx64.efi /boot/EFI/gentoo/grubx64.efi.old
         sbsign --key "$KERNEL_KEY_PATH/db.key" --cert "$KERNEL_KEY_PATH/db.crt" --output /boot/EFI/gentoo/grubx64.efi /boot/EFI/gentoo/grubx64.efi.old
         rm /boot/EFI/gentoo/grubx64.efi.old
+        sbsign --key "$KERNEL_KEY_PATH/db.key" --cert "$KERNEL_KEY_PATH/db.crt" --output /boot/EFI/gentoo/KeyTool.efi /usr/share/efitools/efi/KeyTool.efi
     fi
 
     if [[ "$BINHOST" == "y" ]]; then
@@ -261,11 +262,7 @@ EOF
         emerge --config sys-kernel/gentoo-kernel
     fi
 
-    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        grub-mkconfig -o /boot/EFI/gentoo/grub.cfg
-    else
-        grub-mkconfig -o /boot/grub/grub.cfg
-    fi
+    grub-mkconfig -o /boot/grub/grub.cfg
 
     echo "[!] [CHROOT] Set password for root user:"
     echo "root:$ROOT_PASS" | chpasswd
