@@ -7,13 +7,11 @@ TIMEZONE_SET="Europe/Rome" #CHANGE: Your timezone: search with "ls -l /usr/share
 LOCALE_GEN_SET="it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8" #CHANGE Search with "cat /usr/share/i18n/SUPPORTED" add separated with \n like in example
 ESELECT_LOCALE_SET="it_IT.UTF8" #CHANGE: Select the eselect locale from ESELECT_LOCALE_SET, The UTF8 one: Example "it_IT.UTF-8" become "it_IT.UTF8" w/o dash like in example
 SYSTEMD_LOCALE="it" #CHANGE: Systemd locale
-CPU_MICROCODE="y" #CHANGE: Install or not CPU microcode
+INTEL_CPU_MICROCODE="y" #CHANGE: Install or not Intel CPU microcode
 SECUREBOOT_MODSIGN="y" #CHANGE: Enable Secureboot + Modules Sign
-KERNEL_KEY_PATH="/etc/kernel/certs/linux"
 VIDEOCARDS="intel" #CHANGE: Your video cards: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base 
 PLYMOUTH_THEME_SET="solar" #CHANGE: your favourite plymouth theme: https://wiki.gentoo.org/wiki/Plymouth
 LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
-LUKS_PASSWORD="1" #CHANGE: with your secure luks password
 DEV_INSTALL="ssd" #CHANGE: "nvme" or "ssd"
 SWAP_G="16G" #CHANGE: SWAP GB
 BINHOST="y" #CHANGE: 'n' if you want Gentoo full source compiled, 'y' if you want use binary packages
@@ -93,23 +91,17 @@ EOF
         if [ ! -d /sys/firmware/efi/efivars ]; then
             mount -t efivarfs efivarfs /sys/firmware/efi/efivars || { echo "Error efivars mount"; exit 1; }
         fi
-        mkdir -p $KERNEL_KEY_PATH
-        UUID=$(uuidgen)
-        echo "$UUID" > "$KERNEL_KEY_PATH/myUUID.txt"
-        openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo PK/" -keyout "$KERNEL_KEY_PATH/PK.key" -out "$KERNEL_KEY_PATH/PK.crt" -nodes -days 36500
-        openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo KEK/" -keyout "$KERNEL_KEY_PATH/KEK.key" -out "$KERNEL_KEY_PATH/KEK.crt" -nodes -days 36500
-        openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo DB/" -keyout "$KERNEL_KEY_PATH/db.key" -out "$KERNEL_KEY_PATH/db.crt" -nodes -days 36500
 
         cat >> /etc/portage/make.conf <<EOF
 
 # Optionally, to use custom signing keys.
-MODULES_SIGN_KEY="${KERNEL_KEY_PATH}/db.key"
-MODULES_SIGN_CERT="${KERNEL_KEY_PATH}/db.crt"
+MODULES_SIGN_KEY="/var/lib/sbctl/keys/db/db.key"
+MODULES_SIGN_CERT="/var/lib/sbctl/keys/db/db.pem"
 MODULES_SIGN_HASH="sha512"
 
 # Optionally, to boot with secureboot enabled.
-SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}/db.key"
-SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}/db.crt"
+SECUREBOOT_SIGN_KEY="/var/lib/sbctl/keys/db/db.key"
+SECUREBOOT_SIGN_CERT="/var/lib/sbctl/keys/db/db.pem"
 
 EOF
     fi
@@ -167,15 +159,8 @@ EOF
         SWAP_OFFSET=$(filefrag -v /swap/swap.img|awk 'NR==4{gsub(/\./,"");print $4;}')
     fi
     
-    emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm
-    emerge sys-apps/systemd
-    if [[ "$BINHOST" == "y" ]]; then
-        emerge sys-kernel/gentoo-kernel-bin
-    else
-        emerge sys-kernel/gentoo-kernel
-    fi
-    emerge sys-kernel/linux-firmware
-    emerge sys-firmware/sof-firmware
+    emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm sys-apps/systemd sys-kernel/linux-firmware sys-firmware/sof-firmware
+
     mkdir -p /etc/dracut.conf.d
     if [[ "$LUKSED" == "y" ]]; then
         echo "kernel_cmdline+=\" root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET rd.luks.uuid=$LUKS_UUID \"" >> /etc/dracut.conf.d/default.conf
@@ -193,27 +178,23 @@ EOF
 
     emerge sys-kernel/installkernel
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        mkdir -p /boot/auth
         mkdir -p /boot/EFI/gentoo
-        emerge sys-boot/grub sys-boot/mokutil sys-boot/efibootmgr app-crypt/efitools
-        cd "$KERNEL_KEY_PATH"
-        cert-to-efi-sig-list -g "$UUID" PK.crt PK.esl
-        cert-to-efi-sig-list -g "$UUID" KEK.crt KEK.esl
-        cert-to-efi-sig-list -g "$UUID" db.crt db.esl
-        sign-efi-sig-list -g "$UUID" -k PK.key -c PK.crt PK PK.esl PK.auth
-        sign-efi-sig-list -g "$UUID" -k PK.key -c PK.crt KEK KEK.esl KEK.auth
-        sign-efi-sig-list -g "$UUID" -k KEK.key -c KEK.crt db db.esl db.auth
-        cp db.auth /boot/auth/
-        cp KEK.auth /boot/auth/
-        cp PK.auth /boot/auth/
-        cd /
+        emerge sys-boot/grub sys-boot/mokutil sys-boot/efibootmgr app-crypt/efitools app-crypt/sbctl
+        sbctl create-keys
+        sbctl enroll-keys -m
     fi
 
-    if [[ "$CPU_MICROCODE" == "y" ]]; then
+    if [[ "$INTEL_CPU_MICROCODE" == "y" ]]; then
         emerge sys-firmware/intel-microcode
     fi
 
-    emerge sys-apps/zram-generator
+    if [[ "$BINHOST" == "y" ]]; then
+        emerge sys-kernel/gentoo-kernel-bin
+    else
+        emerge sys-kernel/gentoo-kernel
+    fi
+
+    emerge sys-apps/zram-generator sys-fs/genfstab
     mkdir /etc/systemd/zram-generator.conf.d
     cat > /etc/systemd/zram-generator.conf.d/zram0-swap.conf <<EOF
 [zram0]
@@ -223,13 +204,11 @@ swap-priority = 100
 fs-type = swap
 EOF
 
-    emerge sys-fs/genfstab
     genfstab -U / >> /etc/fstab
     echo "$HOSTNAME" > /etc/hostname
     systemd-machine-id-setup
     systemd-firstboot --keymap="$SYSTEMD_LOCALE"
-    emerge sys-apps/mlocate sys-boot/plymouth net-misc/chrony net-wireless/iw net-wireless/wpa_supplicant net-misc/dhcpcd app-admin/sudo
-    systemctl enable sshd
+    emerge sys-apps/mlocate sys-boot/plymouth net-misc/chrony net-wireless/iw net-wireless/wpa_supplicant net-misc/dhcpcd app-admin/sudo net-misc/networkmanager
     systemctl enable chronyd.service
     plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
 
@@ -244,17 +223,14 @@ EOF
 
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --boot-directory=/boot
 
-    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        mv /boot/EFI/gentoo/grubx64.efi /boot/EFI/gentoo/grubx64.efi.old
-        sbsign --key "$KERNEL_KEY_PATH/db.key" --cert "$KERNEL_KEY_PATH/db.crt" --output /boot/EFI/gentoo/grubx64.efi /boot/EFI/gentoo/grubx64.efi.old
-        rm /boot/EFI/gentoo/grubx64.efi.old
-        sbsign --key "$KERNEL_KEY_PATH/db.key" --cert "$KERNEL_KEY_PATH/db.crt" --output /boot/EFI/gentoo/KeyTool.efi /usr/share/efitools/efi/KeyTool.efi
-    fi
-
     if [[ "$BINHOST" == "y" ]]; then
         emerge --config sys-kernel/gentoo-kernel-bin
     else
         emerge --config sys-kernel/gentoo-kernel
+    fi
+
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        sbctl sign --save /boot/EFI/gentoo/grubx64.efi
     fi
 
     grub-mkconfig -o /boot/grub/grub.cfg
@@ -298,6 +274,10 @@ EOF
 
     echo "[*] [CHROOT] Done. You can now type 'exit', unmount everything and reboot"
     swapoff /swap/swap.img
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        sbctl status
+        sbctl verify
+    fi
     exit 0
 fi
 
