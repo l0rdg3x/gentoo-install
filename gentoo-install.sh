@@ -101,7 +101,7 @@ EOF
         openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo DB/" -keyout "$KERNEL_KEY_PATH/db.key" -out "$KERNEL_KEY_PATH/db.crt" -nodes -days 36500
 
         cat > /etc/env.d/99grub <<EOF
-GRUB_CFG=/efi/EFI/BOOT/grub.cfg
+GRUB_CFG=/efi/EFI/gentoo/grub.cfg
 EOF
         env-update
 
@@ -199,7 +199,7 @@ EOF
     emerge sys-kernel/installkernel
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         mkdir -p /boot/auth
-        mkdir -p /boot/EFI/BOOT
+        mkdir -p /boot/EFI/gentoo
         emerge sys-boot/grub sys-boot/mokutil sys-boot/efibootmgr app-crypt/efitools
         cd "$KERNEL_KEY_PATH"
         cert-to-efi-sig-list -g "$UUID" PK.crt PK.esl
@@ -251,6 +251,12 @@ EOF
     sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' /etc/default/grub
 
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --recheck
+    
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        mv /boot/EFI/gentoo/grubx64.efi /boot/EFI/gentoo/grubx64.efi.old
+        sbsign --key "$KERNEL_KEY_PATH/db.key" --cert "$KERNEL_KEY_PATH/db.crt" --output /boot/EFI/gentoo/grubx64.efi.old /boot/EFI/gentoo/grubx64.efi
+        rm /boot/EFI/gentoo/grubx64.efi.old
+    fi
 
     if [[ "$BINHOST" == "y" ]]; then
         emerge --config sys-kernel/gentoo-kernel-bin
@@ -259,7 +265,7 @@ EOF
     fi
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        grub-mkconfig -o /boot/EFI/BOOT/grub.cfg
+        grub-mkconfig -o /boot/EFI/gentoo/grub.cfg
     else
         grub-mkconfig -o /boot/grub/grub.cfg
     fi
