@@ -159,7 +159,20 @@ EOF
         SWAP_OFFSET=$(filefrag -v /swap/swap.img|awk 'NR==4{gsub(/\./,"");print $4;}')
     fi
     
-    emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm sys-apps/systemd sys-kernel/linux-firmware sys-firmware/sof-firmware
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        mkdir -p /boot/EFI/gentoo
+        emerge app-crypt/efitools app-crypt/sbctl
+        sbctl create-keys
+    fi
+
+    emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm
+    emerge sys-apps/systemd 
+    emerge sys-kernel/linux-firmware sys-firmware/sof-firmware
+    if [[ "$BINHOST" == "y" ]]; then
+        emerge sys-kernel/gentoo-kernel-bin
+    else
+        emerge sys-kernel/gentoo-kernel
+    fi
 
     mkdir -p /etc/dracut.conf.d
     if [[ "$LUKSED" == "y" ]]; then
@@ -179,19 +192,12 @@ EOF
     emerge sys-kernel/installkernel
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         mkdir -p /boot/EFI/gentoo
-        emerge sys-boot/grub sys-boot/mokutil sys-boot/efibootmgr app-crypt/efitools app-crypt/sbctl
-        sbctl create-keys
+        emerge sys-boot/grub sys-boot/efibootmgr
         sbctl enroll-keys -m
     fi
 
     if [[ "$INTEL_CPU_MICROCODE" == "y" ]]; then
         emerge sys-firmware/intel-microcode
-    fi
-
-    if [[ "$BINHOST" == "y" ]]; then
-        emerge sys-kernel/gentoo-kernel-bin
-    else
-        emerge sys-kernel/gentoo-kernel
     fi
 
     emerge sys-apps/zram-generator sys-fs/genfstab
@@ -227,10 +233,6 @@ EOF
         emerge --config sys-kernel/gentoo-kernel-bin
     else
         emerge --config sys-kernel/gentoo-kernel
-    fi
-
-    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        sbctl sign --save /boot/EFI/gentoo/grubx64.efi
     fi
 
     grub-mkconfig -o /boot/grub/grub.cfg
