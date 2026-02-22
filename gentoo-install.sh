@@ -90,28 +90,31 @@ EOF
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         EXTRA_USE+=" modules-sign secureboot"
+        if [ ! -d /sys/firmware/efi/efivars ]; then
+            mount -t efivarfs efivarfs /sys/firmware/efi/efivars || { echo "Error efivars mount"; exit 1; }
+        fi
         mkdir -p $KERNEL_KEY_PATH
-        openssl req -new -nodes -sha256 -x509 -newkey rsa:2048 -days 36500 -addext extendedKeyUsage=1.3.6.1.5.5.7.3.3 -subj '/CN=Gentoo Secure Boot/' -out /etc/kernel/certs/linux/signing_key.cert -keyout /etc/kernel/certs/linux/signing_key.asc
-        cat /etc/kernel/certs/linux/signing_key.asc /etc/kernel/certs/linux/signing_key.cert > /etc/kernel/certs/linux/signing_key.pem
-        openssl x509 -outform der -in /etc/kernel/certs/linux/signing_key.pem -out /etc/kernel/certs/linux/signing_key.x509
-        openssl x509 -in /etc/kernel/certs/linux/signing_key.cert -outform der -out /etc/kernel/certs/linux/signing_key.der
-        chmod -R 600 /etc/kernel/certs/linux/
+        UUID=$(uuidgen)
+        echo "$UUID" > "$KERNEL_KEY_PATH/myUUID.txt"
+        openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo PK/" -keyout "$KERNEL_KEY_PATH/PK.key" -out "$KERNEL_KEY_PATH/PK.crt" -nodes -days 36500
+        openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo KEK/" -keyout "$KERNEL_KEY_PATH/KEK.key" -out "$KERNEL_KEY_PATH/KEK.crt" -nodes -days 36500
+        openssl req -new -x509 -newkey rsa:2048 -subj "/CN=Gentoo DB/" -keyout "$KERNEL_KEY_PATH/db.key" -out "$KERNEL_KEY_PATH/db.crt" -nodes -days 36500
 
         cat > /etc/env.d/99grub <<EOF
-GRUB_CFG=/efi/EFI/Gentoo/grub.cfg
+GRUB_CFG=/efi/EFI/BOOT/grub.cfg
 EOF
         env-update
 
         cat >> /etc/portage/make.conf <<EOF
 
 # Optionally, to use custom signing keys.
-MODULES_SIGN_KEY="${KERNEL_KEY_PATH}/signing_key.pem"
-MODULES_SIGN_CERT="${KERNEL_KEY_PATH}/signing_key.pem"
+MODULES_SIGN_KEY="${KERNEL_KEY_PATH}/db.key"
+MODULES_SIGN_CERT="${KERNEL_KEY_PATH}/db.crt"
 MODULES_SIGN_HASH="sha512"
 
 # Optionally, to boot with secureboot enabled.
-SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}/signing_key.pem"
-SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}/signing_key.pem"
+SECUREBOOT_SIGN_KEY="${KERNEL_KEY_PATH}/db.key"
+SECUREBOOT_SIGN_CERT="${KERNEL_KEY_PATH}/db.crt"
 
 EOF
     fi
@@ -195,10 +198,23 @@ EOF
 
     emerge sys-kernel/installkernel
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        emerge sys-boot/grub sys-boot/mokutil sys-boot/efibootmgr
+        mkdir -p /boot/auth
         mkdir -p /boot/EFI/BOOT
-        mokutil --import /etc/kernel/certs/linux/signing_key.der --ignore-keyring
-        cp /etc/kernel/certs/linux/signing_key.der /boot/ENROLL_THIS_KEY_IN_MOKMANAGER.der
+        emerge sys-boot/grub sys-boot/mokutil sys-boot/efibootmgr app-crypt/efitools
+        cd "$KERNEL_KEY_PATH"
+        cert-to-efi-sig-list -g "$UUID" PK.crt PK.esl
+        cert-to-efi-sig-list -g "$UUID" KEK.crt KEK.esl
+        cert-to-efi-sig-list -g "$UUID" db.crt db.esl
+        sign-efi-sig-list -g "$UUID" -k PK.key -c PK.crt PK PK.esl PK.auth
+        sign-efi-sig-list -g "$UUID" -k PK.key -c PK.crt KEK KEK.esl KEK.auth
+        sign-efi-sig-list -g "$UUID" -k KEK.key -c KEK.crt db db.esl db.auth
+        efi-updatevar -f db.auth db
+        efi-updatevar -f KEK.auth KEK
+        efi-updatevar -f PK.auth PK
+        cp db.auth /boot/auth/
+        cp KEK.auth /boot/auth/
+        cp PK.auth /boot/auth/
+        cd /
     fi
 
     if [[ "$CPU_MICROCODE" == "y" ]]; then
@@ -234,7 +250,7 @@ EOF
     fi
     sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' /etc/default/grub
 
-    grub-install --efi-directory=/boot --bootloader-id=gentoo --removable --recheck --no-nvram --boot-directory=/boot
+    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --recheck
 
     if [[ "$BINHOST" == "y" ]]; then
         emerge --config sys-kernel/gentoo-kernel-bin
