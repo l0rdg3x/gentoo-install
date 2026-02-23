@@ -185,17 +185,15 @@ EOF
         echo 'use_systemd="yes"' >> /etc/dracut.conf.d/default.conf
     fi
 
-    emerge sys-kernel/linux-firmware sys-firmware/sof-firmware
     if [[ "$BINHOST" == "y" ]]; then
         emerge sys-kernel/gentoo-kernel-bin
     else
         emerge sys-kernel/gentoo-kernel
     fi
 
-    emerge sys-kernel/installkernel
+    emerge sys-kernel/installkernel sys-kernel/linux-firmware sys-firmware/sof-firmware sys-boot/grub sys-boot/efibootmgr
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         mkdir -p /boot/EFI/gentoo
-        emerge sys-boot/grub sys-boot/efibootmgr
         sbctl enroll-keys -m
     fi
 
