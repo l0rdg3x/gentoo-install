@@ -142,6 +142,7 @@ EOF
     echo "sys-kernel/installkernel grub dracut" > /etc/portage/package.use/installkernel
     echo "sys-boot/plymouth systemd" > /etc/portage/package.use/plymouth
     cat > /etc/portage/package.accept_keywords/pkgs <<EOF
+app-crypt/sbctl ~amd64
 sys-kernel/gentoo-kernel-bin ~amd64
 sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
@@ -162,6 +163,7 @@ EOF
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         mkdir -p /boot/EFI/gentoo
         emerge app-crypt/efitools app-crypt/sbctl
+        wget https://raw.githubusercontent.com/Deftera186/sbctl/8c7a57ed052f94b8f8eb32321c34736adfdf6ce7/contrib/kernel-install/91-sbctl.install -O /usr/lib/kernel/install.d/91-sbctl.install
         sbctl create-keys
     fi
 
