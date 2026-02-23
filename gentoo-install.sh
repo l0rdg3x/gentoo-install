@@ -168,13 +168,7 @@ EOF
     fi
 
     emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm
-    emerge sys-apps/systemd 
-    emerge sys-kernel/linux-firmware sys-firmware/sof-firmware
-    if [[ "$BINHOST" == "y" ]]; then
-        emerge sys-kernel/gentoo-kernel-bin
-    else
-        emerge sys-kernel/gentoo-kernel
-    fi
+    emerge sys-apps/systemd
 
     mkdir -p /etc/dracut.conf.d
     if [[ "$LUKSED" == "y" ]]; then
@@ -189,6 +183,13 @@ EOF
         echo 'hostonly=yes' >> /etc/dracut.conf.d/default.conf
         echo 'persistent_policy="by-uuid"' >> /etc/dracut.conf.d/default.conf
         echo 'use_systemd="yes"' >> /etc/dracut.conf.d/default.conf
+    fi
+
+    emerge sys-kernel/linux-firmware sys-firmware/sof-firmware
+    if [[ "$BINHOST" == "y" ]]; then
+        emerge sys-kernel/gentoo-kernel-bin
+    else
+        emerge sys-kernel/gentoo-kernel
     fi
 
     emerge sys-kernel/installkernel
