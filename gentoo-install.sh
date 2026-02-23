@@ -275,12 +275,19 @@ EOF
     echo "[*] [CHROOT] Final cleanup"
     rm /stage3-*.tar.*
 
-    echo "[*] [CHROOT] Done. You can now type 'exit', unmount everything and reboot"
     swapoff /swap/swap.img
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        sbctl sign -s /boot/EFI/gentoo/grubx64.efi
+        sbctl sign -s /boot/grub/x86_64-efi/core.efi
+        sbctl sign -s /boot/grub/x86_64-efi/grub.efi
         sbctl status
         sbctl verify
+        echo "[*] [CHROOT] Check that all files are signed"
+        echo "[*] [CHROOT] Use  sbctl sign -s <file>  to sign a file"
     fi
+
+    echo "[*] [CHROOT] Done. You can now type 'exit', unmount everything and reboot"
+
     exit 0
 fi
 
