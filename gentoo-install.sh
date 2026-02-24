@@ -116,6 +116,7 @@ priority = 9999
 sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64-v3
 EOF
         getuto
+        emerge --sync
     fi
 
     if [[ -n "$EXTRA_USE" ]]; then
