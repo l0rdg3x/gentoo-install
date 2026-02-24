@@ -90,6 +90,7 @@ EOF
         EXTRA_USE+=" modules-sign secureboot"
         if [ ! -d /sys/firmware/efi/efivars ]; then
             mount -t efivarfs efivarfs /sys/firmware/efi/efivars || { echo "Error efivars mount"; exit 1; }
+            chattr -i /sys/firmware/efi/efivars/*
         fi
 
         cat >> /etc/portage/make.conf <<EOF
