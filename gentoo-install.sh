@@ -19,7 +19,7 @@ ROOT_PASS="Passw0rdd!" #CHANGE: Password for root user
 USER_NAME="l0rdg3x" #CHANGE: non-root username
 USER_PASS="Passw0rdd!" #CHANGE: Password for non root user 
 ESELECT_PROF="default/linux/amd64/23.0/desktop/plasma/systemd" #CHANGE: Select your preferred profile: "eselect profile list | less" (only systemd profiles work with this script for now) [TODO]
-MIRROR="https://mirror.leaseweb.com/gentoo/releases/amd64/autobuilds" #CHANGE: Your preferred mirror for stage3 download
+MIRROR="https://distfiles.gentoo.org/releases/amd64/autobuilds" #CHANGE: Your preferred mirror for stage3 download
 
 if [[ "$DEV_INSTALL" == "nvme" ]]; then
     DISK_INSTALL="/dev/nvme0n1" #CHANGE: With your nvme dev
