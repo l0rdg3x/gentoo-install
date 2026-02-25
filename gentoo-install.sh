@@ -37,6 +37,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
     echo "[*] [CHROOT] Chroot environment ready"
 
     echo "[*] [CHROOT] Portage synchronization"
+    rm /etc/profile.d/debug*
     source /etc/profile
     emerge-webrsync
     emerge --sync
