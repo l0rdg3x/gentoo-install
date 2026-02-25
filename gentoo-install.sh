@@ -38,6 +38,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     echo "[*] [CHROOT] Portage synchronization"
     rm /etc/profile.d/debug*
+    mkdir -p /var/db/repos/gentoo/
     source /etc/profile
     emerge-webrsync
     emerge --sync
