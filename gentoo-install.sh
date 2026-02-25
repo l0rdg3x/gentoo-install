@@ -15,6 +15,7 @@ LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
 DEV_INSTALL="ssd" #CHANGE: "nvme" or "ssd"
 SWAP_G="16G" #CHANGE: SWAP GB
 BINHOST="y" #CHANGE: 'n' if you want Gentoo full source compiled, 'y' if you want use binary packages
+BINHOST_V3="y" #CHANGE: 'n' if you want to disable x86_64-v3 repo and use x86_64 instead
 ROOT_PASS="Passw0rdd!" #CHANGE: Password for root user
 USER_NAME="l0rdg3x" #CHANGE: non-root username
 USER_PASS="Passw0rdd!" #CHANGE: Password for non root user 
@@ -113,11 +114,19 @@ EOF
         EXTRA_USE+=" getbinpkg binpkg-request-signature"
     
         mkdir -p /etc/portage/binrepos.conf/
-        cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF
+        if [[ "$BINHOST_V3" == "y" ]]; then
+            cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF
 [binhost]
 priority = 9999
 sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64-v3
 EOF
+        else
+            cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF
+[binhost]
+priority = 9999
+sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64
+EOF
+        fi
         getuto
         emerge --sync
     fi
