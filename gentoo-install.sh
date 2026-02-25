@@ -88,6 +88,7 @@ EOF
     mirrorselect -i -o >> /etc/portage/make.conf
     
     EXTRA_USE=""
+    EXTRA_FEATURES=""
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         EXTRA_USE+=" modules-sign secureboot"
@@ -111,7 +112,7 @@ EOF
     fi
 
     if [[ "$BINHOST" == "y" ]]; then
-        EXTRA_USE+=" getbinpkg binpkg-request-signature"
+        EXTRA_FEATURES+=" getbinpkg binpkg-request-signature"
     
         mkdir -p /etc/portage/binrepos.conf/
         if [[ "$BINHOST_V3" == "y" ]]; then
@@ -133,6 +134,10 @@ EOF
 
     if [[ -n "$EXTRA_USE" ]]; then
         sed -i "s/dist-kernel/dist-kernel${EXTRA_USE}/" /etc/portage/make.conf
+    fi
+    if [[ -n "$EXTRA_FEATURES" ]]; then
+        sed -i "s/parallel-install/parallel-install${EXTRA_FEATURES}/" /etc/portage/make.conf
+        sed -i 's/EMERGE_DEFAULT_OPTS="/&--usepkg=y --binpkg-changed-deps=y /' /etc/portage/make.conf
     fi
 
     echo "[*] [CHROOT] Setup CPU flags"
