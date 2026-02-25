@@ -196,7 +196,7 @@ EOF
         emerge sys-kernel/gentoo-kernel
     fi
 
-    emerge sys-kernel/installkernel sys-kernel/linux-firmware sys-firmware/sof-firmware sys-boot/grub sys-boot/efibootmgr
+    emerge sys-kernel/linux-firmware sys-firmware/sof-firmware
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         mkdir -p /boot/EFI/gentoo
         sbctl enroll-keys -m
