@@ -166,18 +166,6 @@ sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
 EOF
 
-    if [[ "$LUKSED" == "y" ]]; then
-        echo "sys-apps/systemd cryptsetup" > /etc/portage/package.use/systemd
-        LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
-        ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/root)
-        SWAP_UUID=$(findmnt -no UUID -T /swap/swap.img)
-        SWAP_OFFSET=$(filefrag -v /swap/swap.img|awk 'NR==4{gsub(/\./,"");print $4;}')
-    else
-        ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
-        SWAP_UUID=$(findmnt -no UUID -T /swap/swap.img)
-        SWAP_OFFSET=$(filefrag -v /swap/swap.img|awk 'NR==4{gsub(/\./,"");print $4;}')
-    fi
-    
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         echo "sys-boot/grub -secureboot" >> /etc/portage/package.use/grub
         mkdir -p /boot/EFI/gentoo
@@ -188,6 +176,18 @@ EOF
 
     emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm
     emerge sys-apps/systemd
+
+    if [[ "$LUKSED" == "y" ]]; then
+        echo "sys-apps/systemd cryptsetup" > /etc/portage/package.use/systemd
+        LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+        ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/root)
+        SWAP_UUID=$(findmnt -no UUID -T /swap/swap.img)
+        SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /swap/swap.img)
+    else
+        ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+        SWAP_UUID=$(findmnt -no UUID -T /swap/swap.img)
+        SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /swap/swap.img)
+    fi
 
     mkdir -p /etc/dracut.conf.d
     if [[ "$LUKSED" == "y" ]]; then
@@ -370,20 +370,20 @@ umount /mnt/gentoo
 
 if [[ "$LUKSED" == "y" ]]; then
     echo "[*] [NO-CHROOT] [LUKS] Remounting subvolumes"
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@ /dev/mapper/root /mnt/gentoo
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@ /dev/mapper/root /mnt/gentoo
     mkdir -p /mnt/gentoo/{boot,home,var/cache,var/log,swap}
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@home  /dev/mapper/root /mnt/gentoo/home
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@log   /dev/mapper/root /mnt/gentoo/var/log
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@cache /dev/mapper/root /mnt/gentoo/var/cache
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@swap  /dev/mapper/root /mnt/gentoo/swap
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@home  /dev/mapper/root /mnt/gentoo/home
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@log   /dev/mapper/root /mnt/gentoo/var/log
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@cache /dev/mapper/root /mnt/gentoo/var/cache
+    mount -o noatime,space_cache=v2,ssd,discard=async,subvol=@swap  /dev/mapper/root /mnt/gentoo/swap
 else
     echo "[*] [NO-CHROOT] Remounting subvolumes"
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@ "$ROOT_PART" /mnt/gentoo
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@ "$ROOT_PART" /mnt/gentoo
     mkdir -p /mnt/gentoo/{boot,home,var/cache,var/log,swap}
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@home  "$ROOT_PART" /mnt/gentoo/home
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@log   "$ROOT_PART" /mnt/gentoo/var/log
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@cache "$ROOT_PART" /mnt/gentoo/var/cache
-    mount -o defaults,noatime,space_cache=v2,compress=zstd,autodefrag,subvol=@swap  "$ROOT_PART" /mnt/gentoo/swap
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@home  "$ROOT_PART" /mnt/gentoo/home
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@log   "$ROOT_PART" /mnt/gentoo/var/log
+    mount -o noatime,compress=zstd:3,space_cache=v2,ssd,discard=async,subvol=@cache "$ROOT_PART" /mnt/gentoo/var/cache
+    mount -o noatime,space_cache=v2,ssd,discard=async,subvol=@swap  "$ROOT_PART" /mnt/gentoo/swap
 fi
 
 mount "$EFI_PART" /mnt/gentoo/boot
@@ -392,6 +392,7 @@ echo "[*] [NO-CHROOT] Creating swap file"
 cd /mnt/gentoo
 truncate -s 0 swap/swap.img
 chattr +C swap/swap.img
+btrfs property set swap/ compression none
 fallocate -l "$SWAP_G" swap/swap.img
 chmod 0600 swap/swap.img
 mkswap swap/swap.img
