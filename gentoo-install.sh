@@ -387,6 +387,7 @@ mount --rbind /dev /mnt/gentoo/dev && mount --make-rslave /mnt/gentoo/dev
 mount --bind /run /mnt/gentoo/run && mount --make-slave /mnt/gentoo/run
 
 echo "[*] [NO-CHROOT] Entering chroot..."
+cd ~
 cp "$0" /mnt/gentoo/gentoo-install.sh
 chmod +x /mnt/gentoo/gentoo-install.sh
 chroot /mnt/gentoo /bin/bash /gentoo-install.sh --chroot
