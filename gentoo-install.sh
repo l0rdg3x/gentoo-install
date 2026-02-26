@@ -160,11 +160,12 @@ virtual/dist-kernel ~amd64
 EOF
 
     mkdir -p /boot/EFI/gentoo
-    emerge app-crypt/efitools app-crypt/sbctl sys-boot/shim
+    emerge app-crypt/efitools app-crypt/sbctl
     #wget https://raw.githubusercontent.com/Deftera186/sbctl/8c7a57ed052f94b8f8eb32321c34736adfdf6ce7/contrib/kernel-install/91-sbctl.install -O /usr/lib/kernel/install.d/91-sbctl.install
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         sbctl create-keys
     fi
+	emerge sys-boot/shim
 
     emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm
     emerge sys-apps/systemd
