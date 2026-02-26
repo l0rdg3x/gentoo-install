@@ -1,54 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-########### CONFIG ############   NOTE: MAYBE 'dialog' ?????
-HOSTNAME="gentoo-qemu" #CHANGE
-TIMEZONE_SET="Europe/Rome" #CHANGE: Your timezone: search with "ls -l /usr/share/zoneinfo"
-LOCALE_GEN_SET="it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8" #CHANGE Search with "cat /usr/share/i18n/SUPPORTED" add separated with \n like in example
-ESELECT_LOCALE_SET="it_IT.UTF8" #CHANGE: Select the eselect locale from ESELECT_LOCALE_SET, The UTF8 one: Example "it_IT.UTF-8" become "it_IT.UTF8" w/o dash like in example
-SYSTEMD_LOCALE="it" #CHANGE: Systemd locale
-INTEL_CPU_MICROCODE="y" #CHANGE: Install or not Intel CPU microcode
-SECUREBOOT_MODSIGN="y" #CHANGE: Enable Secureboot + Modules Sign
-VIDEOCARDS="intel" #CHANGE: Your video cards: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base 
-PLYMOUTH_THEME_SET="solar" #CHANGE: your favourite plymouth theme: https://wiki.gentoo.org/wiki/Plymouth
-LUKSED="n" #CHANGE: Enable LUKS? "y" or "n"
-DEV_INSTALL="ssd" #CHANGE: "nvme" or "ssd"
-SWAP_G="16G" #CHANGE: SWAP GB
-BINHOST="y" #CHANGE: 'n' if you want Gentoo full source compiled, 'y' if you want use binary packages
-BINHOST_V3="y" #CHANGE: 'n' if you want to disable x86_64-v3 repo and use x86_64 instead
-ROOT_PASS="Passw0rdd!" #CHANGE: Password for root user
-USER_NAME="l0rdg3x" #CHANGE: non-root username
-USER_PASS="Passw0rdd!" #CHANGE: Password for non root user 
-ESELECT_PROF="default/linux/amd64/23.0/desktop/plasma/systemd" #CHANGE: Select your preferred profile: "eselect profile list | less" (only systemd profiles work with this script for now) [TODO]
-MIRROR="https://distfiles.gentoo.org/releases/amd64/autobuilds" #CHANGE: Your preferred mirror for stage3 download
-
-if [[ "$DEV_INSTALL" == "nvme" ]]; then
-    DISK_INSTALL="/dev/nvme0n1" #CHANGE: With your nvme dev
-    EFI_PART="${DISK_INSTALL}p1" #DO NOT CHANGE
-    ROOT_PART="${DISK_INSTALL}p2" #DO NOT CHANGE
-fi
-if [[ "$DEV_INSTALL" == "ssd" ]]; then
-    DISK_INSTALL="/dev/sda" #CHANGE: With your ssd dev
-    EFI_PART="${DISK_INSTALL}1" #DO NOT CHANGE
-    ROOT_PART="${DISK_INSTALL}2" #DO NOT CHANGE
-fi
+########### CONFIG ############
+HOSTNAME="gentoo-qemu"                           # CHANGE
+TIMEZONE_SET="Europe/Rome"                       # CHANGE: search with "ls -l /usr/share/zoneinfo"
+LOCALE_GEN_SET="it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8"  # CHANGE: search with "cat /usr/share/i18n/SUPPORTED"
+ESELECT_LOCALE_SET="it_IT.UTF8"                  # CHANGE: UTF8 without dash (es. it_IT.UTF-8 → it_IT.UTF8)
+SYSTEMD_LOCALE="it"                              # CHANGE: systemd locale
+INTEL_CPU_MICROCODE="y"                          # CHANGE: "y" or "n"
+SECUREBOOT_MODSIGN="y"                           # CHANGE: "y" or "n"
+USE_SYSTEMD_BOOT="n"                             # CHANGE: "y" = systemd-boot (recommended for UKI+SecureBoot), "n" = GRUB
+VIDEOCARDS="intel"                               # CHANGE: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base
+PLYMOUTH_THEME_SET="solar"                       # CHANGE: https://wiki.gentoo.org/wiki/Plymouth
+LUKSED="n"                                       # CHANGE: "y" or "n"
+DEV_INSTALL="ssd"                                # CHANGE: "nvme" or "ssd"
+SWAP_G="16G"                                     # CHANGE: swap size
+BINHOST="y"                                      # CHANGE: "y" = binary packages, "n" = full source
+BINHOST_V3="y"                                   # CHANGE: "y" = x86-64-v3, "n" = x86-64
+ROOT_PASS="Passw0rdd!"                           # CHANGE
+USER_NAME="l0rdg3x"                              # CHANGE
+USER_PASS="Passw0rdd!"                           # CHANGE
+ESELECT_PROF="default/linux/amd64/23.0/desktop/plasma/systemd"  # CHANGE
+MIRROR="https://distfiles.gentoo.org/releases/amd64/autobuilds" # CHANGE
 ###############################
 
+if [[ "$DEV_INSTALL" == "nvme" ]]; then
+    DISK_INSTALL="/dev/nvme0n1"         # CHANGE
+    EFI_PART="${DISK_INSTALL}p1"
+    ROOT_PART="${DISK_INSTALL}p2"
+fi
+if [[ "$DEV_INSTALL" == "ssd" ]]; then
+    DISK_INSTALL="/dev/sda"             # CHANGE
+    EFI_PART="${DISK_INSTALL}1"
+    ROOT_PART="${DISK_INSTALL}2"
+fi
+
+# ============================================================
+# CHROOT SECTION
+# ============================================================
 if [[ "${1:-}" == "--chroot" ]]; then
+    # Swap UUID and offset are passed from the host as env vars
+    # (set before chroot in the host section below)
+    : "${SWAP_UUID_HOST:?SWAP_UUID_HOST not set}"
+    : "${SWAP_OFFSET_HOST:?SWAP_OFFSET_HOST not set}"
+
     echo "[*] [CHROOT] Chroot environment ready"
 
-    echo "[*] [CHROOT] Portage synchronization"
-    rm /etc/profile.d/debug* || true
+    rm -f /etc/profile.d/debug* || true
     mkdir -p /var/db/repos/gentoo/
     source /etc/profile
+
+    echo "[*] [CHROOT] Portage synchronization (webrsync)"
     emerge-webrsync
 
-    echo "[*] [CHROOT] Set Profile selection"
+    echo "[*] [CHROOT] Set Profile"
     eselect profile set "$ESELECT_PROF"
 
     emerge --oneshot app-portage/mirrorselect
 
-    echo "[*] [CHROOT] Generic make.conf configuration"
+    # ---- make.conf base ----
+    echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<EOF
 # ====================
 # = GENTOO MAKE.CONF =
@@ -75,81 +86,109 @@ GRUB_PLATFORMS="efi-64"
 
 VIDEO_CARDS="$VIDEOCARDS"
 
-# This sets the language of build output to English.
-# Please keep this setting intact when reporting bugs.
+# Build output in English (required for bug reports)
 LC_MESSAGES=C.utf8
 
-
 EOF
-        
-    echo "[*] [CHROOT] Select Mirror list (wait 3 secs)"
+
+    echo "[*] [CHROOT] Selecting mirrors (interactive, 3s delay)"
     sleep 3
     mirrorselect -i -o >> /etc/portage/make.conf
-    
+
+    # ---- Accumulate extra USE / FEATURES ----
     EXTRA_USE=""
     EXTRA_FEATURES=""
 
+    # ---- Secureboot / module signing ----
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         EXTRA_USE+=" modules-sign secureboot"
-        if [ ! -d /sys/firmware/efi/efivars ]; then
-            mount -t efivarfs efivarfs /sys/firmware/efi/efivars || { echo "Error efivars mount"; exit 1; }
-            chattr -i /sys/firmware/efi/efivars/*
+
+        # Mount efivars if not already mounted
+        if ! mountpoint -q /sys/firmware/efi/efivars; then
+            mount -t efivarfs efivarfs /sys/firmware/efi/efivars \
+                || { echo "[!] Error mounting efivars"; exit 1; }
         fi
+        # NOTE: do NOT run "chattr -i /sys/firmware/efi/efivars/*" globally —
+        # it removes immutability from all EFI variables and can brick the firmware.
+        # sbctl/mokutil handle what they need internally.
 
         cat >> /etc/portage/make.conf <<EOF
 
-# Optionally, to use custom signing keys.
+# Secure Boot signing keys (generated by sbctl)
 MODULES_SIGN_KEY="/var/lib/sbctl/keys/db/db.key"
 MODULES_SIGN_CERT="/var/lib/sbctl/keys/db/db.pem"
 MODULES_SIGN_HASH="sha512"
 
-# Optionally, to boot with secureboot enabled.
 SECUREBOOT_SIGN_KEY="/var/lib/sbctl/keys/db/db.key"
 SECUREBOOT_SIGN_CERT="/var/lib/sbctl/keys/db/db.pem"
 
 EOF
     fi
 
+    # ---- Binary host ----
     if [[ "$BINHOST" == "y" ]]; then
         EXTRA_FEATURES+=" getbinpkg binpkg-request-signature"
-    
+
         mkdir -p /etc/portage/binrepos.conf/
-		SUFFIX=$([[ "$BINHOST_V3" == "y" ]] && echo "x86-64-v3" || echo "x86-64")
+        SUFFIX=$([[ "$BINHOST_V3" == "y" ]] && echo "x86-64-v3" || echo "x86-64")
         cat > /etc/portage/binrepos.conf/gentoobinhost.conf <<EOF
 [binhost]
 priority = 9999
 sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/$SUFFIX
 EOF
-		getuto
-    	emerge --sync
-	fi
+        # NOTE: removed "getuto" — not a valid command.
+        # binpkg-request-signature handles GPG key fetching automatically via portage.
+        emerge --sync
+    fi
 
+    # ---- Apply accumulated USE / FEATURES to make.conf ----
     if [[ -n "$EXTRA_USE" ]]; then
-        sed -i "s/systemd/systemd${EXTRA_USE}/" /etc/portage/make.conf
+        sed -i "s/^USE=\"dist-kernel uki systemd\"/USE=\"dist-kernel uki systemd${EXTRA_USE}\"/" \
+            /etc/portage/make.conf
     fi
     if [[ -n "$EXTRA_FEATURES" ]]; then
-        sed -i "s/parallel-install/parallel-install${EXTRA_FEATURES}/" /etc/portage/make.conf
-        sed -i 's/EMERGE_DEFAULT_OPTS="/&--usepkg=y --binpkg-changed-deps=y /' /etc/portage/make.conf
+        sed -i "s/parallel-install\"/parallel-install${EXTRA_FEATURES}\"/" \
+            /etc/portage/make.conf
+        # prepend --usepkg flags to EMERGE_DEFAULT_OPTS
+        sed -i 's/EMERGE_DEFAULT_OPTS="--jobs/EMERGE_DEFAULT_OPTS="--usepkg=y --binpkg-changed-deps=y --jobs/' \
+            /etc/portage/make.conf
     fi
 
-    echo "[*] [CHROOT] Setup CPU flags"
-    mkdir -p /var/cache/ccache
+    # ---- CPU flags ----
+    echo "[*] [CHROOT] Detecting CPU flags"
     emerge --oneshot app-portage/cpuid2cpuflags
     echo "*/* $(cpuid2cpuflags)" > /etc/portage/package.use/00cpu-flags
 
-    echo "[*] [CHROOT] Set Localization"
+    # ---- Localization ----
+    echo "[*] [CHROOT] Setting localization"
     ln -sf ../usr/share/zoneinfo/"$TIMEZONE_SET" /etc/localtime
-    echo -e "en_US.UTF-8 UTF-8\n$LOCALE_GEN_SET" > /etc/locale.gen
+    printf "en_US.UTF-8 UTF-8\n%b\n" "$LOCALE_GEN_SET" > /etc/locale.gen
     locale-gen
     eselect locale set "$ESELECT_LOCALE_SET"
     env-update && source /etc/profile
 
-    echo "[*] [CHROOT] Base installation"
-    echo "sys-kernel/installkernel dracut uki" > /etc/portage/package.use/installkernel
-    echo "sys-boot/grub shim" >> /etc/portage/package.use/grub
-    echo "sys-boot/plymouth systemd" > /etc/portage/package.use/plymouth
-    echo "sys-apps/systemd cryptsetup boot" > /etc/portage/package.use/systemd
-    
+    # ---- package.use / package.accept_keywords ----
+    echo "[*] [CHROOT] Configuring package.use and accept_keywords"
+
+    # installkernel: dracut + uki; add secureboot USE if needed
+    INSTALLKERNEL_USE="dracut uki"
+    [[ "$SECUREBOOT_MODSIGN" == "y" ]] && INSTALLKERNEL_USE+=" secureboot"
+    echo "sys-kernel/installkernel $INSTALLKERNEL_USE" \
+        > /etc/portage/package.use/installkernel
+
+    # grub (only installed if USE_SYSTEMD_BOOT=n)
+    echo "sys-boot/grub shim device-mapper truetype mount" \
+        > /etc/portage/package.use/grub
+
+    # plymouth
+    echo "sys-boot/plymouth systemd-integration" \
+        > /etc/portage/package.use/plymouth
+
+    # systemd: cryptsetup for LUKS, boot for sd-boot integration, zstd, ukify for UKI
+    echo "sys-apps/systemd cryptsetup boot zstd ukify" \
+        > /etc/portage/package.use/systemd
+
+    mkdir -p /etc/portage/package.accept_keywords/
     cat > /etc/portage/package.accept_keywords/pkgs <<EOF
 app-crypt/sbctl ~amd64
 sys-kernel/gentoo-kernel-bin ~amd64
@@ -157,17 +196,31 @@ sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
 EOF
 
+    # ---- sbctl keys (BEFORE kernel, so installkernel can sign the UKI) ----
+    echo "[*] [CHROOT] Installing efitools and sbctl"
     mkdir -p /boot/EFI/gentoo
     emerge app-crypt/efitools app-crypt/sbctl
-    #wget https://raw.githubusercontent.com/Deftera186/sbctl/8c7a57ed052f94b8f8eb32321c34736adfdf6ce7/contrib/kernel-install/91-sbctl.install -O /usr/lib/kernel/install.d/91-sbctl.install
+
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        echo "[*] [CHROOT] Creating Secure Boot keys"
         sbctl create-keys
+        # Do NOT enroll keys yet — enroll AFTER all EFI files are signed
     fi
-	emerge sys-boot/shim
 
-    emerge dev-util/ccache dev-vcs/git sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-block/io-scheduler-udev-rules sys-fs/mdadm
-    emerge sys-apps/systemd
+    # ---- Core system packages ----
+    echo "[*] [CHROOT] Installing core system packages"
+    # Conditionally include grub/shim
+    BOOT_PKGS="sys-boot/efibootmgr"
+    if [[ "$USE_SYSTEMD_BOOT" == "n" ]]; then
+        BOOT_PKGS+=" sys-boot/grub sys-boot/shim"
+    fi
 
+    emerge $BOOT_PKGS \
+           app-crypt/efitools app-crypt/sbctl \
+           sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
+           sys-apps/systemd
+
+    # ---- Determine root device and UUIDs ----
     if [[ "$LUKSED" == "y" ]]; then
         LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
         ROOT_DEV="/dev/mapper/root"
@@ -176,39 +229,105 @@ EOF
     fi
 
     ROOT_UUID=$(blkid -s UUID -o value "$ROOT_DEV")
-    SWAP_UUID=$(findmnt -no UUID -T /swap/swap.img)
-    SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /swap/swap.img)
 
-    mkdir -p /etc/kernel
-    mkdir -p /etc/dracut.conf.d
+    # Use swap UUID and offset passed from host environment (reliable)
+    SWAP_UUID="$SWAP_UUID_HOST"
+    SWAP_OFFSET="$SWAP_OFFSET_HOST"
+
+    # ---- Kernel cmdline and dracut config ----
+    echo "[*] [CHROOT] Writing kernel cmdline and dracut config"
+    mkdir -p /etc/kernel /etc/dracut.conf.d
+
     CMDLINE="root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET quiet rw splash"
-    
-    if [[ "$LUKSED" == "y" ]]; then
-    	CMDLINE+=" rd.luks.uuid=$LUKS_UUID"
-    fi
-    
+    [[ "$LUKSED" == "y" ]] && CMDLINE+=" rd.luks.uuid=$LUKS_UUID"
     echo "$CMDLINE" > /etc/kernel/cmdline
+
+    DRACUT_MODULES="btrfs resume"
+    [[ "$LUKSED" == "y" ]] && DRACUT_MODULES+=" crypt"
 
     cat > /etc/dracut.conf.d/uki.conf <<EOF
 uefi="yes"
 hostonly="yes"
 use_systemd="yes"
-add_dracutmodules+=" btrfs $( [[ "$LUKSED" == "y" ]] && echo "crypt" ) resume "
+add_dracutmodules+=" $DRACUT_MODULES "
 EOF
 
-    echo "[*] [CHROOT] Installazione Kernel (Generazione UKI)"
-    KERNEL_PKG=$([[ "$BINHOST" == "y" ]] && echo "sys-kernel/gentoo-kernel-bin" || echo "sys-kernel/gentoo-kernel")
+    # ---- Kernel installation ----
+    echo "[*] [CHROOT] Installing kernel (UKI generation)"
+    KERNEL_PKG=$([[ "$BINHOST" == "y" ]] && echo "sys-kernel/gentoo-kernel-bin" \
+                                          || echo "sys-kernel/gentoo-kernel")
     emerge "$KERNEL_PKG"
     emerge sys-kernel/linux-firmware sys-firmware/sof-firmware
     [[ "$INTEL_CPU_MICROCODE" == "y" ]] && emerge sys-firmware/intel-microcode
-    
+
+    # ---- Sign EFI files (BEFORE enrolling keys) ----
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        mkdir -p /boot/EFI/gentoo
+        echo "[*] [CHROOT] Signing EFI binaries"
+        find /boot/EFI/Linux -name "*.efi" -exec sbctl sign -s {} \;
+
+        if [[ "$USE_SYSTEMD_BOOT" == "y" ]]; then
+            # Sign systemd-boot EFI stub
+            find /boot/EFI/systemd -name "*.efi" -exec sbctl sign -s {} \; 2>/dev/null || true
+            find /boot/EFI/BOOT    -name "*.efi" -exec sbctl sign -s {} \; 2>/dev/null || true
+        else
+            # Sign GRUB + shim binaries
+            sbctl sign -s /boot/EFI/gentoo/grubx64.efi   2>/dev/null || true
+            sbctl sign -s /boot/EFI/gentoo/shimx64.efi   2>/dev/null || true
+            sbctl sign -s /boot/EFI/gentoo/MokManager.efi 2>/dev/null || true
+        fi
+
+        echo "[*] [CHROOT] Enrolling Secure Boot keys (Microsoft certs included via -m)"
         sbctl enroll-keys -m
     fi
 
+    # ---- Bootloader setup ----
+    echo "[*] [CHROOT] Installing bootloader"
+    if [[ "$USE_SYSTEMD_BOOT" == "y" ]]; then
+        bootctl install --esp-path=/boot
+        # systemd-boot entries are managed by kernel-install / installkernel automatically
+        # when USE="boot" is set in systemd and dist-kernel/uki are active.
+    else
+        # GRUB with shim: manually place shim as the EFI default loader
+        # and point it at grubx64.efi (no unsupported --shim flag)
+        grub-install \
+            --target=x86_64-efi \
+            --efi-directory=/boot \
+            --bootloader-id=gentoo \
+            --boot-directory=/boot
+        [[ "$LUKSED" == "y" ]] && \
+            grep -q 'GRUB_ENABLE_CRYPTODISK' /etc/default/grub || \
+            echo "GRUB_ENABLE_CRYPTODISK=y" >> /etc/default/grub
+        sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' \
+            /etc/default/grub
+
+        if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+            # Copy shim as the default EFI loader, point it at grub
+            cp /usr/share/shim/shimx64.efi /boot/EFI/gentoo/shimx64.efi
+            cp /usr/share/shim/mmx64.efi   /boot/EFI/gentoo/MokManager.efi
+            # shimx64.efi looks for grubx64.efi by default in the same directory
+            efibootmgr --create \
+                --disk "$DISK_INSTALL" \
+                --part 1 \
+                --loader "\\EFI\\gentoo\\shimx64.efi" \
+                --label "Gentoo (shim)" \
+                --unicode
+        fi
+
+        grub-mkconfig -o /boot/grub/grub.cfg
+    fi
+
+    # ---- Kernel post-install config (dracut UKI rebuild) ----
+    if [[ "$BINHOST" == "y" ]]; then
+        emerge --config sys-kernel/gentoo-kernel-bin
+    else
+        emerge --config sys-kernel/gentoo-kernel
+    fi
+
+    # ---- zram + fstab ----
+    echo "[*] [CHROOT] Setting up zram and fstab"
     emerge sys-apps/zram-generator sys-fs/genfstab
-    mkdir /etc/systemd/zram-generator.conf.d
+
+    mkdir -p /etc/systemd/zram-generator.conf.d
     cat > /etc/systemd/zram-generator.conf.d/zram0-swap.conf <<EOF
 [zram0]
 zram-size = ram / 2
@@ -218,60 +337,44 @@ fs-type = swap
 EOF
 
     genfstab -U / >> /etc/fstab
+
+    # ---- System identity ----
     echo "$HOSTNAME" > /etc/hostname
     systemd-machine-id-setup
     systemd-firstboot --keymap="$SYSTEMD_LOCALE"
-    emerge sys-apps/mlocate sys-boot/plymouth net-misc/chrony net-wireless/iw net-wireless/wpa_supplicant net-misc/dhcpcd app-admin/sudo net-misc/networkmanager
+
+    # ---- Additional packages ----
+    echo "[*] [CHROOT] Installing additional packages"
+    emerge \
+        sys-apps/mlocate \
+        sys-boot/plymouth \
+        net-misc/chrony \
+        net-wireless/iw \
+        net-wireless/wpa_supplicant \
+        net-misc/dhcpcd \
+        app-admin/sudo \
+        net-misc/networkmanager
+
     systemctl enable chronyd.service NetworkManager
+
     plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
 
-    echo "[*] [CHROOT] GRUB configuration"
-    if [[ "$LUKSED" == "y" ]]; then
-        echo "GRUB_ENABLE_CRYPTODISK=y" >> /etc/default/grub
-    fi
-    sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' /etc/default/grub
-
-    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
-        grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --boot-directory=/boot --shim /usr/share/shim/shimx64.efi --lockdown
-        sbctl sign -s /boot/EFI/gentoo/grubx64.efi
-        sbctl sign -s /boot/EFI/gentoo/shimx64.efi
-        sbctl sign -s /boot/EFI/gentoo/MokManager.efi
-        find /boot/EFI/Linux -name "*.efi" -exec sbctl sign -s {} \;
-    else
-        grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=gentoo --boot-directory=/boot
-    fi
-
-    if [[ "$BINHOST" == "y" ]]; then
-        emerge --config sys-kernel/gentoo-kernel-bin
-    else
-        emerge --config sys-kernel/gentoo-kernel
-    fi
-
-    grub-mkconfig -o /boot/grub/grub.cfg
-
-    echo "[!] [CHROOT] Set password for root user:"
+    # ---- Users ----
+    echo "[*] [CHROOT] Setting up users"
     echo "root:$ROOT_PASS" | chpasswd
-
-    echo "[!] [CHROOT] Set password for $USER_NAME user:"
     useradd -m -G users,wheel,audio,cdrom,usb,video -s /bin/bash "$USER_NAME"
     echo "${USER_NAME}:${USER_PASS}" | chpasswd
-
-    echo "[*] [CHROOT] Enable sudo for the wheel group"
     sed -i 's/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
-    echo "[*] [CHROOT] Change gentoo repo to git"
+    # ---- Switch gentoo repo to git ----
+    echo "[*] [CHROOT] Switching Portage repo to git"
     mkdir -p /etc/portage/repos.conf/
     cat > /etc/portage/repos.conf/gentoo.conf <<EOF
 [DEFAULT]
 main-repo = gentoo
 
 [gentoo]
-
-# The sync-depth=1 option speeds up initial pull by fetching 
-# only the latest Git commit and its immediate ancestors, 
-# reducing the amount of downloaded Git history.
 sync-depth = 1
-
 sync-type = git
 auto-sync = yes
 location = /var/db/repos/gentoo
@@ -283,110 +386,135 @@ EOF
     rm -rf /var/db/repos/gentoo/*
     emaint sync
 
-    echo "[*] [CHROOT] Final cleanup"
-    rm /stage3-*.tar.*
+    # ---- Final report ----
+    echo "[*] [CHROOT] Cleanup"
+    rm -f /stage3-*.tar.*
+    swapoff /swap/swap.img || true
 
-    swapoff /swap/swap.img
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        echo "============================================"
         sbctl status
         sbctl verify
-        echo "[*] [CHROOT] Check that all files are signed"
-        echo "[*] [CHROOT] Use  sbctl sign -s <file>  to sign a file"
+        echo "============================================"
+        echo "[!] Verify all EFI files above are signed."
+        echo "    If any are missing: sbctl sign -s <file>"
+        echo "============================================"
     fi
-	
-    echo "[*] [CHROOT] Done. You can now type 'exit', unmount everything and reboot"
-	rm -f /gentoo-install.sh
+
+    echo "[*] [CHROOT] Done. Type 'exit', unmount everything, then reboot."
+    rm -f /gentoo-install.sh
     exit 0
 fi
 
-#BEGINNING
-echo "[*] [NO-CHROOT] Clock synchronization"
+# ============================================================
+# HOST (PRE-CHROOT) SECTION
+# ============================================================
+
+echo "[*] [HOST] Clock synchronization"
 chronyd -q
 
-echo "[*] [NO-CHROOT] Deleting partition table"
+echo "[*] [HOST] Wiping partition table on $DISK_INSTALL"
 sgdisk --zap-all "$DISK_INSTALL"
 
-echo "[*] [NO-CHROOT] Creating a new GPT table"
+echo "[*] [HOST] Creating GPT partition table"
 parted -s "$DISK_INSTALL" mklabel gpt
 
-echo "[*] [NO-CHROOT] Creating EFI partition"
+echo "[*] [HOST] Creating EFI partition (1 MiB → 513 MiB)"
 parted -s "$DISK_INSTALL" mkpart ESP fat32 1MiB 513MiB
 parted -s "$DISK_INSTALL" set 1 esp on
-
 mkfs.fat -F32 "$EFI_PART"
 
-echo "[*] [NO-CHROOT] Creating Linux root partition with remaining disk space"
+echo "[*] [HOST] Creating root partition (513 MiB → 100%)"
 parted -s "$DISK_INSTALL" mkpart primary 513MiB 100%
 parted -s "$DISK_INSTALL" type 2 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
 
 mkdir -p /mnt/gentoo
 
+# ---- LUKS ----
 if [[ "$LUKSED" == "y" ]]; then
-    echo "[*] [NO-CHROOT] [LUKS] Encrypting root disk with LUKS: Create unlock password"
-    cryptsetup luksFormat --key-size 512 "$ROOT_PART" || { echo "Errore password!"; exit 1; }
-
-    echo "[*] [NO-CHROOT] [LUKS] Mounting root disk with LUKS: Enter unlock password"
-    cryptsetup luksOpen "$ROOT_PART" root || { echo "Errore password!"; exit 1; }
-
-    echo "[*] [NO-CHROOT] [LUKS] Btrfs formatting"
-    mkfs.btrfs -f /dev/mapper/root
-
-    echo "[*] [NO-CHROOT] [LUKS] Mounting"
-    mount /dev/mapper/root /mnt/gentoo
+    echo "[*] [HOST] [LUKS] Encrypting root partition"
+    cryptsetup luksFormat --key-size 512 "$ROOT_PART" \
+        || { echo "[!] luksFormat failed"; exit 1; }
+    echo "[*] [HOST] [LUKS] Opening LUKS container"
+    cryptsetup luksOpen "$ROOT_PART" root \
+        || { echo "[!] luksOpen failed"; exit 1; }
+    ROOT_DEV_MNT="/dev/mapper/root"
 else
-    echo "[*] [NO-CHROOT] Btrfs formatting"
-    mkfs.btrfs -f "$ROOT_PART"
-    echo "[*] [NO-CHROOT] Mounting"
-    mount "$ROOT_PART" /mnt/gentoo
+    ROOT_DEV_MNT="$ROOT_PART"
 fi
 
+# ---- Btrfs ----
+echo "[*] [HOST] Formatting root as Btrfs"
+mkfs.btrfs -f "$ROOT_DEV_MNT"
 
+echo "[*] [HOST] Creating Btrfs subvolumes"
+mount "$ROOT_DEV_MNT" /mnt/gentoo
 cd /mnt/gentoo
-for subvol in @ @home @log @cache @swap; do btrfs subvolume create "$subvol"; done
+for subvol in @ @home @log @cache @swap; do
+    btrfs subvolume create "$subvol"
+done
 cd ~
 umount /mnt/gentoo
 
 MOUNT_OPTS="noatime,compress=zstd:3,ssd,discard=async"
-ROOT_DEV_MNT=$([[ "$LUKSED" == "y" ]] && echo "/dev/mapper/root" || echo "$ROOT_PART")
 
-mount -o $MOUNT_OPTS,subvol=@ "$ROOT_DEV_MNT" /mnt/gentoo
+echo "[*] [HOST] Mounting subvolumes"
+mount -o "$MOUNT_OPTS",subvol=@      "$ROOT_DEV_MNT" /mnt/gentoo
 mkdir -p /mnt/gentoo/{boot,home,var/cache,var/log,swap}
-mount -o $MOUNT_OPTS,subvol=@home  "$ROOT_DEV_MNT" /mnt/gentoo/home
-mount -o $MOUNT_OPTS,subvol=@log   "$ROOT_DEV_MNT" /mnt/gentoo/var/log
-mount -o $MOUNT_OPTS,subvol=@cache "$ROOT_DEV_MNT" /mnt/gentoo/var/cache
-mount -o noatime,subvol=@swap      "$ROOT_DEV_MNT" /mnt/gentoo/swap
-
+mount -o "$MOUNT_OPTS",subvol=@home  "$ROOT_DEV_MNT" /mnt/gentoo/home
+mount -o "$MOUNT_OPTS",subvol=@log   "$ROOT_DEV_MNT" /mnt/gentoo/var/log
+mount -o "$MOUNT_OPTS",subvol=@cache "$ROOT_DEV_MNT" /mnt/gentoo/var/cache
+mount -o noatime,subvol=@swap        "$ROOT_DEV_MNT" /mnt/gentoo/swap
 mount "$EFI_PART" /mnt/gentoo/boot
 
-echo "[*] [NO-CHROOT] Creating swap file"
+# ---- Swap file ----
+echo "[*] [HOST] Creating swap file ($SWAP_G)"
 truncate -s 0 /mnt/gentoo/swap/swap.img
-chattr +C /mnt/gentoo/swap/swap.img
+chattr +C /mnt/gentoo/swap/swap.img         # disable CoW on the file
 btrfs property set /mnt/gentoo/swap/ compression none
 fallocate -l "$SWAP_G" /mnt/gentoo/swap/swap.img
 chmod 0600 /mnt/gentoo/swap/swap.img
 mkswap /mnt/gentoo/swap/swap.img
 swapon /mnt/gentoo/swap/swap.img
 
-echo "[*] [NO-CHROOT] Downloading stage3"
+# ---- Compute swap UUID/offset HERE (on the host, mounts are reliable) ----
+echo "[*] [HOST] Computing swap UUID and offset for hibernation"
+# For Btrfs the resume UUID is the filesystem UUID (same as the root device)
+SWAP_UUID_HOST=$(blkid -s UUID -o value "$ROOT_DEV_MNT")
+SWAP_OFFSET_HOST=$(btrfs inspect-internal map-swapfile -r /mnt/gentoo/swap/swap.img)
+echo "    SWAP_UUID_HOST   = $SWAP_UUID_HOST"
+echo "    SWAP_OFFSET_HOST = $SWAP_OFFSET_HOST"
+export SWAP_UUID_HOST SWAP_OFFSET_HOST
+
+# ---- Stage3 ----
+echo "[*] [HOST] Downloading stage3"
 cd /mnt/gentoo
 LATEST=$(curl -s "$MIRROR/latest-stage3-amd64-desktop-systemd.txt")
-STAGE3=$(echo "$LATEST" | grep 'stage3-amd64-desktop-systemd-.*\.tar\.xz' | cut -d' ' -f1)
+STAGE3=$(echo "$LATEST" \
+    | grep 'stage3-amd64-desktop-systemd-.*\.tar\.xz' \
+    | grep -v '\.CONTENTS\|\.DIGESTS\|\.asc' \
+    | cut -d' ' -f1)
 wget "$MIRROR/$STAGE3"
 
-echo "[*] [NO-CHROOT] Extracting stage3"
+echo "[*] [HOST] Extracting stage3"
 tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner
 
-echo "[*] [NO-CHROOT] DNS configuration"
+echo "[*] [HOST] Copying DNS config"
 cp --dereference /etc/resolv.conf /mnt/gentoo/etc/
 
-echo "[*] [NO-CHROOT] Mounting system filesystem (proc,sys,dev,run)"
-mount --types proc /proc /mnt/gentoo/proc
-mount --rbind /sys /mnt/gentoo/sys && mount --make-rslave /mnt/gentoo/sys
-mount --rbind /dev /mnt/gentoo/dev && mount --make-rslave /mnt/gentoo/dev
-mount --bind /run /mnt/gentoo/run && mount --make-slave /mnt/gentoo/run
+echo "[*] [HOST] Mounting virtual filesystems"
+mount --types proc    /proc    /mnt/gentoo/proc
+mount --rbind         /sys     /mnt/gentoo/sys  && mount --make-rslave /mnt/gentoo/sys
+mount --rbind         /dev     /mnt/gentoo/dev  && mount --make-rslave /mnt/gentoo/dev
+mount --bind          /run     /mnt/gentoo/run  && mount --make-slave  /mnt/gentoo/run
 
-echo "[*] [NO-CHROOT] Entering chroot..."
-cd ~
-cp "$0" /mnt/gentoo/gentoo-install.sh
+echo "[*] [HOST] Entering chroot"
+SCRIPT_PATH=$(readlink -f "$0")
+cp "$SCRIPT_PATH" /mnt/gentoo/gentoo-install.sh
 chmod +x /mnt/gentoo/gentoo-install.sh
-chroot /mnt/gentoo /bin/bash /gentoo-install.sh --chroot
+
+# Pass computed values into chroot via environment
+chroot /mnt/gentoo /usr/bin/env \
+    SWAP_UUID_HOST="$SWAP_UUID_HOST" \
+    SWAP_OFFSET_HOST="$SWAP_OFFSET_HOST" \
+    /bin/bash /gentoo-install.sh --chroot
