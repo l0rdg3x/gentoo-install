@@ -122,8 +122,9 @@ EOF
 priority = 9999
 sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/$SUFFIX
 EOF
-	getuto
-    emerge --sync
+		getuto
+    	emerge --sync
+	fi
 
     if [[ -n "$EXTRA_USE" ]]; then
         sed -i "s/systemd/systemd${EXTRA_USE}/" /etc/portage/make.conf
