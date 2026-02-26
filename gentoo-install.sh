@@ -107,8 +107,6 @@ MODULES_SIGN_HASH="sha512"
 SECUREBOOT_SIGN_KEY="/var/lib/sbctl/keys/db/db.key"
 SECUREBOOT_SIGN_CERT="/var/lib/sbctl/keys/db/db.pem"
 
-MODULES_SIGN_KEY="/var/lib/sbctl/keys/db/db.key"
-MODULES_SIGN_CERT="/var/lib/sbctl/keys/db/db.pem"
 EOF
     fi
 
@@ -150,7 +148,7 @@ EOF
     echo "sys-kernel/installkernel dracut uki" > /etc/portage/package.use/installkernel
     echo "sys-boot/grub shim" >> /etc/portage/package.use/grub
     echo "sys-boot/plymouth systemd" > /etc/portage/package.use/plymouth
-    echo "sys-apps/systemd cryptsetup" > /etc/portage/package.use/systemd
+    echo "sys-apps/systemd cryptsetup boot" > /etc/portage/package.use/systemd
     
     cat > /etc/portage/package.accept_keywords/pkgs <<EOF
 app-crypt/sbctl ~amd64
