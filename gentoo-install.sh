@@ -509,8 +509,7 @@ mount --rbind         /dev     /mnt/gentoo/dev  && mount --make-rslave /mnt/gent
 mount --bind          /run     /mnt/gentoo/run  && mount --make-slave  /mnt/gentoo/run
 
 echo "[*] [HOST] Entering chroot"
-SCRIPT_PATH=$(readlink -f "$0")
-cp "$SCRIPT_PATH" /mnt/gentoo/gentoo-install.sh
+cp /root/gentoo-install.sh /mnt/gentoo/gentoo-install.sh
 chmod +x /mnt/gentoo/gentoo-install.sh
 
 # Pass computed values into chroot via environment
