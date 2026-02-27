@@ -719,7 +719,8 @@ echo "[*] [HOST] Downloading stage3"
 cd /mnt/gentoo
 LATEST=$(curl -s "$MIRROR/latest-stage3-amd64-desktop-systemd.txt")
 STAGE3=$(echo "$LATEST" \
-    | grep 'stage3-amd64-desktop-systemd-.*\.tar\.xz$' \
+    | grep 'stage3-amd64-desktop-systemd-.*\.tar\.xz' \
+    | grep -v '\.CONTENTS\|\.DIGESTS\|\.asc' \
     | cut -d' ' -f1)
 wget "$MIRROR/$STAGE3"
 
