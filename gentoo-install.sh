@@ -224,7 +224,7 @@ EOF
         sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
         app-crypt/efitools sys-fs/btrfs-progs \
         sys-fs/xfsprogs sys-fs/dosfstools \
-        sys-apps/systemd sys-apps/kmod
+        sys-apps/systemd sys-apps/kmod dev-vcs/git
 
     # ---- Verify shim and signed GRUB are present ----
     SHIM_EFI="/usr/share/shim/BOOTX64.EFI"
