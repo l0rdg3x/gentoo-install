@@ -335,28 +335,6 @@ EOF
         mokutil --import /var/lib/sbctl/keys/db/db.der
     fi
 
-    # ---- grub-btrfs + snapper ----
-    echo "[*] [CHROOT] Installing grub-btrfs and snapper"
-    emerge sys-fs/snapper app-backup/grub-btrfs
-
-    # snapper root config
-    snapper -c root create-config /
-
-    # grub-btrfs must regenerate grub.cfg into /boot/EFI/gentoo/ (not /boot/grub/)
-    # because the signed standalone GRUB reads from its own EFI directory.
-    mkdir -p /etc/default/
-    cat > /etc/default/grub-btrfs/config <<EOF
-# Path to the directory containing the GRUB EFI binary and grub.cfg
-GRUB_BTRFS_GRUB_DIRNAME="/boot/EFI/gentoo"
-EOF
-
-    # Enable grub-btrfs path watcher (auto-rebuilds grub.cfg on new snapshots)
-    systemctl enable grub-btrfs.path
-
-    # Snapper timers
-    systemctl enable snapper-timeline.timer
-    systemctl enable snapper-cleanup.timer
-
     # ---- Post-install kernel config (dracut rebuild) ----
     if [[ "$BINHOST" == "y" ]]; then
         emerge --config sys-kernel/gentoo-kernel-bin
