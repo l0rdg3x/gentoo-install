@@ -22,6 +22,7 @@ SECUREBOOT_MODSIGN="y"                                           # CHANGE: "y" o
 VIDEOCARDS="intel"                                               # CHANGE: https://wiki.gentoo.org/wiki/Handbook:AMD64/Installation/Base
 PLYMOUTH_THEME_SET="solar"                                       # CHANGE: https://wiki.gentoo.org/wiki/Plymouth
 LUKSED="n"                                                       # CHANGE: "y" or "n"
+LUKS_PASS="Passw0rdd!"                                           # CHANGE
 DEV_INSTALL="ssd"                                                # CHANGE: "nvme" or "ssd"
 SWAP_G="16G"                                                     # CHANGE
 BINHOST="y"                                                      # CHANGE: "y" = binary packages, "n" = full source
@@ -461,10 +462,10 @@ mkdir -p /mnt/gentoo
 # ---- LUKS (optional) ----
 if [[ "$LUKSED" == "y" ]]; then
     echo "[*] [HOST] [LUKS] Encrypting root partition"
-    cryptsetup luksFormat --key-size 512 "$ROOT_PART" \
+    echo -n "$LUKS_PASS" | cryptsetup luksFormat --key-size 512 "$ROOT_PART" -d - --batch-mode \
         || { echo "[!] luksFormat failed"; exit 1; }
     echo "[*] [HOST] [LUKS] Opening LUKS container"
-    cryptsetup luksOpen "$ROOT_PART" root \
+    echo -n "$LUKS_PASS" | cryptsetup luksOpen "$ROOT_PART" root -d - \
         || { echo "[!] luksOpen failed"; exit 1; }
     ROOT_DEV_MNT="/dev/mapper/root"
 else
