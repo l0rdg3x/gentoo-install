@@ -100,7 +100,7 @@ LC_MESSAGES=C.utf8
 
 EOF
 
-    BEST_MIRROR=$(mirrorselect -s3 -b -D -o)
+    BEST_MIRROR=$(mirrorselect -s3 -b10 -D -o)
     echo "$BEST_MIRROR" >> /etc/portage/make.conf
 
     EXTRA_USE=""
