@@ -222,8 +222,8 @@ EOF
     # shellcheck disable=SC2086
     emerge \
         sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
-        app-crypt/efitools app-crypt/sbctl \
-        sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
+        app-crypt/efitools sys-fs/btrfs-progs \
+        sys-fs/xfsprogs sys-fs/dosfstools \
         sys-apps/systemd sys-apps/kmod
 
     # ---- Verify shim and signed GRUB are present ----
