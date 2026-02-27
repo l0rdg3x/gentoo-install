@@ -272,7 +272,7 @@ LC_MESSAGES=C.utf8
 MAKECONF
 
     echo "[*] [CHROOT] Selecting best mirrors"
-    BEST_MIRROR=$(mirrorselect -s3 -b10 -D -o)
+    BEST_MIRROR=$(mirrorselect -s3 -b10 -S -D -o)
     echo "$BEST_MIRROR" >> /etc/portage/make.conf
 
     EXTRA_USE=""
