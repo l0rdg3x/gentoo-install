@@ -8,6 +8,7 @@ set -euo pipefail
 #                  → kernel in /boot/
 # Secureboot: sbctl generates MOK keys; key enrolled via mokutil into shim MOKlist.
 #             NO sbctl enroll-keys (no direct UEFI db enrollment needed with shim).
+# Snapshots:  grub-btrfs + snapper
 # =============================================================================
 
 # =============================================================================
@@ -19,6 +20,8 @@ if [[ "${1:-}" != "--chroot" ]]; then
         echo "[!] 'dialog' not found. Installing..."
         if command -v emerge &>/dev/null; then
             emerge --oneshot dev-util/dialog
+        elif command -v apt-get &>/dev/null; then
+            apt-get install -y dialog
         else
             echo "[!] Cannot install dialog automatically. Please install it manually."
             exit 1
@@ -125,15 +128,18 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     ask_input SWAP_G "Disk" \
-        "Swap file size  (e.g. 8G, 16G, 32G).\nFor ibernation (RAM * 1.5):" "16G"
+        "Swap file size  (e.g. 8G, 16G, 32G):" "16G"
 
     # ---- LUKS ----
     ask_yesno LUKSED "Encryption" \
         "Enable LUKS encryption on the root partition?" "n"
     if [[ "$LUKSED" == "y" ]]; then
         ask_pass LUKS_PASS "Encryption" "LUKS passphrase:"
+        ask_yesno TPM_UNLOCK "Encryption" \
+            "Enable automatic TPM2 unlock for LUKS?\n\nThe LUKS passphrase will still work as fallback.\nTPM enrollment runs after first reboot via /usr/local/sbin/gentoo-tpm-enroll.sh" "n"
     else
         LUKS_PASS=""
+        TPM_UNLOCK="n"
     fi
 
     # ---- Hardware ----
@@ -178,6 +184,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Disk            : $DISK_INSTALL  ($DEV_INSTALL)
   Swap            : $SWAP_G
   LUKS            : $LUKSED
+  TPM2 unlock     : $TPM_UNLOCK
 
   Binary packages : $BINHOST  (v3: $BINHOST_V3)
   Video cards     : $VIDEOCARDS
@@ -211,7 +218,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     export ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
-    export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS
+    export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
 fi
 
 # =============================================================================
@@ -328,15 +335,11 @@ BINCONF
     env-update && source /etc/profile
 
     echo "[*] [CHROOT] Writing package.use"
-    INSTALLKERNEL_USE="dracut grub systemd"
-    [[ "$SECUREBOOT_MODSIGN" == "y" ]] && INSTALLKERNEL_USE+=" secureboot"
-    echo "sys-kernel/installkernel $INSTALLKERNEL_USE" \
+    echo "sys-kernel/installkernel dracut grub systemd" \
         > /etc/portage/package.use/installkernel
-    echo "sys-boot/grub secureboot shim device-mapper truetype mount" \
+    echo "sys-boot/grub truetype mount" \
         > /etc/portage/package.use/grub
-    echo "sys-boot/plymouth systemd-integration" \
-        > /etc/portage/package.use/plymouth
-    echo "sys-apps/systemd cryptsetup zstd" \
+    echo "sys-apps/systemd cryptsetup tpm" \
         > /etc/portage/package.use/systemd
     echo "sys-apps/kmod pkcs7" \
         > /etc/portage/package.use/kmod
@@ -390,10 +393,18 @@ KEYWORDS
     mkdir -p /etc/dracut.conf.d
     DRACUT_MODULES="btrfs resume"
     [[ "$LUKSED" == "y" ]] && DRACUT_MODULES+=" crypt"
+    [[ "${TPM_UNLOCK:-n}" == "y" ]] && DRACUT_MODULES+=" tpm2-tss"
     cat > /etc/dracut.conf.d/gentoo.conf <<DRACUT
 hostonly="yes"
 add_dracutmodules+=" $DRACUT_MODULES "
 DRACUT
+    # TPM2 kernel drivers needed in initramfs for early unlock
+    if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
+        cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
+# TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
+add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
+TPM2CONF
+    fi
 
     echo "[*] [CHROOT] Configuring /etc/default/grub"
     CMDLINE_LINUX="root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET quiet rw splash"
@@ -483,8 +494,94 @@ ZRAM
         app-admin/sudo \
         net-misc/networkmanager
 
+    # TPM2 tools (needed for systemd-cryptenroll at first boot)
+    if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
+        emerge app-crypt/tpm2-tools
+    fi
+
     systemctl enable chronyd.service NetworkManager
     plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+
+    # ---- TPM2 enrollment script (runs after first reboot) ----
+    # systemd-cryptenroll cannot be run during install chroot because the TPM
+    # PCR values are not valid until the system boots normally for the first time.
+    if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
+        echo "[*] [CHROOT] Creating TPM2 enrollment script"
+        LUKS_UUID_FOR_ENROLL=$(blkid -s UUID -o value "$ROOT_PART" 2>/dev/null || true)
+        cat > /usr/local/sbin/gentoo-tpm-enroll.sh <<TPMENROLL
+#!/usr/bin/env bash
+# =============================================================================
+# TPM2 LUKS enrollment script — run ONCE after first successful boot
+# Binds the LUKS decryption key to TPM2 PCR 7+14.
+#
+# PCR 7  = Secure Boot state (firmware certs + SB on/off)
+# PCR 14 = shim MOK database (changes if shim certs change, stable across
+#           kernel upgrades — unlike PCR 4 which changes on every kernel update)
+#
+# Fallback: the LUKS passphrase always works even if TPM unlock fails.
+# =============================================================================
+set -euo pipefail
+
+LUKS_DEV="\${1:-/dev/disk/by-uuid/$LUKS_UUID_FOR_ENROLL}"
+
+if [[ ! -b "\$LUKS_DEV" ]]; then
+    echo "[!] LUKS device not found: \$LUKS_DEV"
+    echo "    Usage: \$0 [/dev/sdXN]"
+    exit 1
+fi
+
+echo "[*] Checking TPM2 device..."
+if ! systemd-cryptenroll --tpm2-device=list 2>&1 | grep -q 'PATH'; then
+    echo "[!] No TPM2 device found. Aborting."
+    exit 1
+fi
+
+echo "[*] Current LUKS keyslots:"
+systemd-cryptenroll "\$LUKS_DEV"
+
+echo ""
+echo "[*] Enrolling TPM2 key bound to PCR 7+14"
+echo "    PCR 7  = Secure Boot state"
+echo "    PCR 14 = shim MOK database"
+echo "    Enter your LUKS passphrase when prompted."
+echo ""
+
+systemd-cryptenroll \
+    --tpm2-device=auto \
+    --tpm2-pcrs=7+14 \
+    "\$LUKS_DEV"
+
+echo ""
+echo "[*] Enrollment complete. Updated keyslots:"
+systemd-cryptenroll "\$LUKS_DEV"
+
+echo ""
+echo "[*] Updating /etc/crypttab for TPM2 auto-unlock..."
+LUKS_UUID_VAL=\$(blkid -s UUID -o value "\$LUKS_DEV")
+if grep -q "luks-\$LUKS_UUID_VAL\|UUID=\$LUKS_UUID_VAL" /etc/crypttab 2>/dev/null; then
+    # Add tpm2-device=auto to existing crypttab entry
+    sed -i "s|\(UUID=\$LUKS_UUID_VAL[[:space:]].*none[[:space:]]\)\(.*\)|\1\2,tpm2-device=auto|" /etc/crypttab
+    echo "[*] /etc/crypttab updated."
+else
+    echo "[!] Could not find UUID=\$LUKS_UUID_VAL in /etc/crypttab"
+    echo "    Add 'tpm2-device=auto' to the options field manually."
+fi
+
+echo ""
+echo "[*] Rebuilding initramfs to include TPM2 modules..."
+dracut --force
+
+echo ""
+echo "[!] Done. TPM2 unlock is now active."
+echo "    On next reboot, LUKS will unlock automatically via TPM2."
+echo "    Your passphrase still works as fallback."
+echo ""
+echo "    To remove TPM2 unlock later:"
+echo "      systemd-cryptenroll --wipe-slot=tpm2 \$LUKS_DEV"
+TPMENROLL
+        chmod +x /usr/local/sbin/gentoo-tpm-enroll.sh
+        echo "[*] [CHROOT] TPM2 enrollment script created at /usr/local/sbin/gentoo-tpm-enroll.sh"
+    fi
 
     echo "[*] [CHROOT] Setting up users"
     echo "root:$ROOT_PASS" | chpasswd
@@ -530,6 +627,12 @@ GITCONF
         echo "    modinfo <module> | grep sig"
     fi
     echo "============================================"
+    if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
+        echo "[!] TPM2 unlock:"
+        echo "    After first successful boot, run:"
+        echo "      sudo /usr/local/sbin/gentoo-tpm-enroll.sh"
+        echo ""
+    fi
     echo "[*] Done. Type 'exit', unmount everything, then reboot."
     rm -f /gentoo-install.sh
     exit 0
@@ -658,6 +761,7 @@ chroot /mnt/gentoo /usr/bin/env \
     PLYMOUTH_THEME_SET="$PLYMOUTH_THEME_SET" \
     SECUREBOOT_MODSIGN="$SECUREBOOT_MODSIGN" \
     MOK_PASS="${MOK_PASS:-}" \
+    TPM_UNLOCK="${TPM_UNLOCK:-n}" \
     ROOT_PASS="$ROOT_PASS" \
     USER_NAME="$USER_NAME" \
     USER_PASS="$USER_PASS" \
