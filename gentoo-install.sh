@@ -737,7 +737,7 @@ mount --rbind         /dev     /mnt/gentoo/dev  && mount --make-rslave /mnt/gent
 mount --bind          /run     /mnt/gentoo/run  && mount --make-slave  /mnt/gentoo/run
 
 echo "[*] [HOST] Entering chroot"
-cp "$(readlink -f "$0")" /mnt/gentoo/gentoo-install.sh
+cp /root/gentoo-install.sh /mnt/gentoo/gentoo-install.sh
 chmod +x /mnt/gentoo/gentoo-install.sh
 
 chroot /mnt/gentoo /usr/bin/env \
