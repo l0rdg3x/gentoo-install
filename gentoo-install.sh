@@ -81,7 +81,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "Europe/Rome"
 
     ask_input LOCALE_GEN_SET "Localization" \
-        "Entries for /etc/locale.gen (separate multiple with \\\\n)\nExample: it_IT ISO-8859-1\\\\nit_IT.UTF-8 UTF-8" \
+        "Entries for /etc/locale.gen (separate multiple with \\\\\\n)\nExample: it_IT ISO-8859-1\\\\\\nit_IT.UTF-8 UTF-8" \
         "it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8"
 
     ask_input ESELECT_LOCALE_SET "Localization" \
@@ -127,7 +127,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     ask_input SWAP_G "Disk" \
-        "Swap file size  (e.g. 8G, 16G, 32G):" "16G"
+        "Swap file size  (e.g. 8G, 16G, 32G)\nFor Ibernation (RAM * 1.5):" "16G"
 
     # ---- LUKS ----
     ask_yesno LUKSED "Encryption" \
