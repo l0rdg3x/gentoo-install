@@ -174,9 +174,7 @@ EOF
 
     # installkernel: no UKI — plain dracut initramfs + signed kernel image
     # secureboot USE makes installkernel sign the kernel EFI image automatically
-    INSTALLKERNEL_USE="dracut"
-    [[ "$SECUREBOOT_MODSIGN" == "y" ]] && INSTALLKERNEL_USE+=" secureboot"
-    echo "sys-kernel/installkernel $INSTALLKERNEL_USE" \
+    echo "sys-kernel/installkernel dracut grub systemd" \
         > /etc/portage/package.use/installkernel
 
     # grub:
