@@ -8,7 +8,6 @@ set -euo pipefail
 #                  → kernel in /boot/
 # Secureboot: sbctl generates MOK keys; key enrolled via mokutil into shim MOKlist.
 #             NO sbctl enroll-keys (no direct UEFI db enrollment needed with shim).
-# Snapshots:  grub-btrfs + snapper for boot-from-snapshot support.
 # =============================================================================
 
 ########### CONFIG ############
