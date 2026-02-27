@@ -29,6 +29,7 @@ BINHOST_V3="y"                                                   # CHANGE: "y" =
 ROOT_PASS="Passw0rdd!"                                           # CHANGE
 USER_NAME="l0rdg3x"                                              # CHANGE
 USER_PASS="Passw0rdd!"                                           # CHANGE
+MOK_PASS="Passw0rdd!"                                           # CHANGE
 ESELECT_PROF="default/linux/amd64/23.0/desktop/plasma/systemd"  # CHANGE
 MIRROR="https://distfiles.gentoo.org/releases/amd64/autobuilds" # CHANGE
 ###############################
@@ -99,9 +100,8 @@ LC_MESSAGES=C.utf8
 
 EOF
 
-    echo "[*] [CHROOT] Selecting mirrors (3s delay, interactive)"
-    sleep 3
-    mirrorselect -i -o >> /etc/portage/make.conf
+    BEST_MIRROR=$(mirrorselect -s3 -b -D -o)
+    echo "$BEST_MIRROR" >> /etc/portage/make.conf
 
     EXTRA_USE=""
     EXTRA_FEATURES=""
@@ -332,7 +332,7 @@ EOF
         echo "[*] [CHROOT] Enrolling MOK key via mokutil"
         echo "[!] You will be asked to set a one-time enrollment password."
         echo "    Write it down — MokManager will ask for it on first reboot."
-        mokutil --import /var/lib/sbctl/keys/db/db.der
+        printf "%s\n%s\n" "$MOK_PASS" "$MOK_PASS" | mokutil --import /var/lib/sbctl/keys/db/db.der
     fi
 
     # ---- Post-install kernel config (dracut rebuild) ----
