@@ -8,7 +8,6 @@ set -euo pipefail
 #                  → kernel in /boot/
 # Secureboot: sbctl generates MOK keys; key enrolled via mokutil into shim MOKlist.
 #             NO sbctl enroll-keys (no direct UEFI db enrollment needed with shim).
-# Snapshots:  grub-btrfs + snapper
 # =============================================================================
 
 # =============================================================================
@@ -82,7 +81,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "Europe/Rome"
 
     ask_input LOCALE_GEN_SET "Localization" \
-        "Entries for /etc/locale.gen (separate multiple with \\n)\nExample: it_IT ISO-8859-1\\nit_IT.UTF-8 UTF-8" \
+        "Entries for /etc/locale.gen (separate multiple with \\\\n)\nExample: it_IT ISO-8859-1\\\\nit_IT.UTF-8 UTF-8" \
         "it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8"
 
     ask_input ESELECT_LOCALE_SET "Localization" \
@@ -192,7 +191,6 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Plymouth theme  : $PLYMOUTH_THEME_SET
   Secure Boot     : $SECUREBOOT_MODSIGN
 
-  Root user       : root
   Non-root user   : $USER_NAME
 
   !! $DISK_INSTALL will be completely wiped !!"
@@ -248,17 +246,17 @@ if [[ "${1:-}" == "--chroot" ]]; then
 # ====================
 
 COMMON_FLAGS="-march=native -O2 -pipe"
-CFLAGS="${COMMON_FLAGS}"
-CXXFLAGS="${COMMON_FLAGS}"
-FCFLAGS="${COMMON_FLAGS}"
-FFLAGS="${COMMON_FLAGS}"
-RUSTFLAGS="${RUSTFLAGS} -C target-cpu=native"
+CFLAGS="\${COMMON_FLAGS}"
+CXXFLAGS="\${COMMON_FLAGS}"
+FCFLAGS="\${COMMON_FLAGS}"
+FFLAGS="\${COMMON_FLAGS}"
+RUSTFLAGS="\${RUSTFLAGS} -C target-cpu=native"
 
 MAKEOPTS="-j$(nproc) -l$(nproc)"
 
 EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
 
-FEATURES="${FEATURES} candy parallel-fetch parallel-install"
+FEATURES="\${FEATURES} candy parallel-fetch parallel-install"
 
 USE="dist-kernel systemd"
 
