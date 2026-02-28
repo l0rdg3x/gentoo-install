@@ -372,7 +372,7 @@ KEYWORDS
         sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
         app-crypt/efitools \
         sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
-        sys-apps/systemd sys-apps/kmod dev-vcs/git
+        sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth
 
     SHIM_EFI="/usr/share/shim/BOOTX64.EFI"
     SHIM_MM="/usr/share/shim/mmx64.efi"
@@ -503,7 +503,6 @@ ZRAM
     echo "[*] [CHROOT] Installing additional packages"
     emerge \
         sys-apps/mlocate \
-        sys-boot/plymouth \
         net-misc/chrony \
         net-wireless/iw \
         net-wireless/wpa_supplicant \
