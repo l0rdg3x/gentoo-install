@@ -390,7 +390,7 @@ KEYWORDS
 
     echo "[*] [CHROOT] Writing dracut config"
     mkdir -p /etc/dracut.conf.d
-    DRACUT_MODULES="btrfs resume"
+    DRACUT_MODULES="btrfs resume plymouth"
     [[ "$LUKSED" == "y" ]] && DRACUT_MODULES+=" crypt"
     cat > /etc/dracut.conf.d/gentoo.conf <<DRACUT
 hostonly="yes"
@@ -398,9 +398,10 @@ add_dracutmodules+=" $DRACUT_MODULES "
 DRACUT
     # TPM2 kernel drivers needed in initramfs for early unlock
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
+        emerge app-crypt/tpm2-tools app-crypt/tpm2-tss
         cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
-add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
+add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb tpm2-tss"
 TPM2CONF
     fi
 
@@ -491,11 +492,6 @@ ZRAM
         net-misc/dhcpcd \
         app-admin/sudo \
         net-misc/networkmanager
-
-    # TPM2 tools (needed for systemd-cryptenroll at first boot)
-    if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
-        emerge app-crypt/tpm2-tools acct-user/tss acct-group/tss
-    fi
 
     systemctl enable chronyd.service NetworkManager
     plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
