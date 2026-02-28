@@ -167,6 +167,12 @@ if [[ "${1:-}" != "--chroot" ]]; then
         MOK_PASS=""
     fi
 
+    ask_yesno GRUB_PASSWORD_ENABLE "GRUB" \
+    "Enable GRUB password?\n(Prevents editing boot parameters with 'e')" "y"
+    if [[ "$GRUB_PASSWORD_ENABLE" == "y" ]]; then
+        ask_pass GRUB_PASS "GRUB" "GRUB boot menu password:"
+    fi
+
     # ---- Users ----
     ask_pass ROOT_PASS "Users" "Root password:"
     ask_input USER_NAME "Users" "Non-root username:" "user"
@@ -190,6 +196,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Intel microcode : $INTEL_CPU_MICROCODE
   Plymouth theme  : $PLYMOUTH_THEME_SET
   Secure Boot     : $SECUREBOOT_MODSIGN
+  Grub Password   : $GRUB_PASSWORD_ENABLE
 
   Non-root user   : $USER_NAME
 
@@ -217,6 +224,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
+    export GRUB_PASSWORD_ENABLE GRUB_PASS
 fi
 
 # =============================================================================
@@ -228,6 +236,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     echo "[*] [CHROOT] Environment ready"
     rm -f /etc/profile.d/debug* || true
+    echo 'GRUB_CFG=/boot/EFI/gentoo/grub.cfg' >> /etc/environment
     mkdir -p /var/db/repos/gentoo/
     source /etc/profile
 
@@ -433,6 +442,15 @@ TPM2CONF
     cp "$SHIM_EFI"    /boot/EFI/gentoo/shimx64.efi
     cp "$SHIM_MM"     /boot/EFI/gentoo/mmx64.efi
     cp "$SIGNED_GRUB" /boot/EFI/gentoo/grubx64.efi
+
+    if [[ "${GRUB_PASSWORD_ENABLE:-n}" == "y" ]]; then
+        GRUB_HASH=$(echo -e "$GRUB_PASS\n$GRUB_PASS" | grub-mkpasswd-pbkdf2 | grep -oP 'grub\.pbkdf2\.[^\s]+')
+        cat >> /etc/grub.d/40_custom <<GRUBPWD
+set superusers="root"
+password_pbkdf2 root $GRUB_HASH
+export superusers
+GRUBPWD
+    fi
 
     echo "[*] [CHROOT] Generating grub.cfg in ESP"
     GRUB_CFG=/boot/EFI/gentoo/grub.cfg \
@@ -762,4 +780,6 @@ chroot /mnt/gentoo /usr/bin/env \
     USER_PASS="$USER_PASS" \
     SWAP_UUID_HOST="$SWAP_UUID_HOST" \
     SWAP_OFFSET_HOST="$SWAP_OFFSET_HOST" \
+    GRUB_PASSWORD_ENABLE="${GRUB_PASSWORD_ENABLE:-n}" \
+    GRUB_PASS="${GRUB_PASS:-}" \
     /bin/bash /gentoo-install.sh --chroot
