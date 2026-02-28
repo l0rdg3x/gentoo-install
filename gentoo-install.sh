@@ -392,7 +392,6 @@ KEYWORDS
     mkdir -p /etc/dracut.conf.d
     DRACUT_MODULES="btrfs resume"
     [[ "$LUKSED" == "y" ]] && DRACUT_MODULES+=" crypt"
-    [[ "${TPM_UNLOCK:-n}" == "y" ]] && DRACUT_MODULES+=" tpm2-tss"
     cat > /etc/dracut.conf.d/gentoo.conf <<DRACUT
 hostonly="yes"
 add_dracutmodules+=" $DRACUT_MODULES "
@@ -495,7 +494,7 @@ ZRAM
 
     # TPM2 tools (needed for systemd-cryptenroll at first boot)
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
-        emerge app-crypt/tpm2-tools
+        emerge app-crypt/tpm2-tools acct-user/tss acct-group/tss
     fi
 
     systemctl enable chronyd.service NetworkManager
