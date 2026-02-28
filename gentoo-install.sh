@@ -424,6 +424,10 @@ TPM2CONF
         grep -q 'GRUB_ENABLE_CRYPTODISK' /etc/default/grub \
             || echo "GRUB_ENABLE_CRYPTODISK=y" >> /etc/default/grub
     fi
+    if [[ "$GRUB_PASSWORD_ENABLE" == "y" ]]; then
+        grep -q 'GRUB_MENUENTRY_ID="--unrestricted"' /etc/default/grub \
+            || echo 'GRUB_MENUENTRY_ID="--unrestricted"' >> /etc/default/grub
+    fi
 
     echo "[*] [CHROOT] Installing kernel"
     KERNEL_PKG=$([[ "$BINHOST" == "y" ]] && echo "sys-kernel/gentoo-kernel-bin" \
