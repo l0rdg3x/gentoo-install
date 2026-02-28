@@ -353,6 +353,7 @@ KEYWORDS
 
     echo "[*] [CHROOT] Installing sbctl and generating MOK keys"
     emerge app-crypt/efitools app-crypt/sbctl
+    wget https://raw.githubusercontent.com/Deftera186/sbctl/8c7a57ed052f94b8f8eb32321c34736adfdf6ce7/contrib/kernel-install/91-sbctl.install -O /usr/lib/kernel/install.d/91-sbctl.install
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         sbctl create-keys
     fi
