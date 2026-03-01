@@ -410,7 +410,8 @@ DRACUT
         emerge app-crypt/tpm2-tools app-crypt/tpm2-tss
         cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
-add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb tpm2-tss"
+add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
+dracut_modules+=" tpm2-tss "
 TPM2CONF
     fi
 
