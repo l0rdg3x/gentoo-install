@@ -390,6 +390,7 @@ KEYWORDS
     if [[ "$LUKSED" == "y" ]]; then
         LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
         ROOT_DEV="/dev/mapper/root"
+        echo "root  UUID=$LUKS_UUID  none  luks" > /etc/crypttab
     else
         ROOT_DEV="$ROOT_PART"
     fi
