@@ -529,11 +529,9 @@ ZRAM
 #!/usr/bin/env bash
 # =============================================================================
 # TPM2 LUKS enrollment script — run ONCE after first successful boot
-# Binds the LUKS decryption key to TPM2 PCR 7+14.
+# Binds the LUKS decryption key to TPM2 PCR 7.
 #
 # PCR 7  = Secure Boot state (firmware certs + SB on/off)
-# PCR 14 = shim MOK database (changes if shim certs change, stable across
-#           kernel upgrades — unlike PCR 4 which changes on every kernel update)
 #
 # Fallback: the LUKS passphrase always works even if TPM unlock fails.
 # =============================================================================
@@ -557,15 +555,14 @@ echo "[*] Current LUKS keyslots:"
 systemd-cryptenroll "\$LUKS_DEV"
 
 echo ""
-echo "[*] Enrolling TPM2 key bound to PCR 7+14"
+echo "[*] Enrolling TPM2 key bound to PCR 7"
 echo "    PCR 7  = Secure Boot state"
-echo "    PCR 14 = shim MOK database"
 echo "    Enter your LUKS passphrase when prompted."
 echo ""
 
 systemd-cryptenroll \
     --tpm2-device=auto \
-    --tpm2-pcrs=7+14 \
+    --tpm2-pcrs=7 \
     "\$LUKS_DEV"
 
 echo ""
