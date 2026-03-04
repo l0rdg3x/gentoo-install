@@ -136,9 +136,16 @@ if [[ "${1:-}" != "--chroot" ]]; then
         ask_pass LUKS_PASS "Encryption" "LUKS passphrase:"
         ask_yesno TPM_UNLOCK "Encryption" \
             "Enable automatic TPM2 unlock for LUKS?\n\nThe LUKS passphrase will still work as fallback.\nTPM enrollment runs after first reboot via /usr/local/sbin/gentoo-tpm-enroll.sh" "n"
+        if [[ "$TPM_UNLOCK" == "y" ]]; then
+            ask_yesno TPM_WITH_PIN "Encryption" \
+                "Require a PIN together with TPM2?\n\nAdds a second factor: TPM (something you have)\n+ PIN (something you know).\nProtects against theft of the whole device." "n"
+        else
+            TPM_WITH_PIN="n"
+        fi
     else
         LUKS_PASS=""
         TPM_UNLOCK="n"
+        TPM_WITH_PIN="n"
     fi
 
     # ---- Hardware ----
@@ -190,6 +197,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Swap            : $SWAP_G
   LUKS            : $LUKSED
   TPM2 unlock     : $TPM_UNLOCK
+  TPM2 + PIN      : $TPM_WITH_PIN
 
   Binary packages : $BINHOST  (v3: $BINHOST_V3)
   Video cards     : $VIDEOCARDS
@@ -223,7 +231,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     export ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
-    export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
+    export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK TPM_WITH_PIN
     export GRUB_PASSWORD_ENABLE GRUB_PASS
 fi
 
@@ -579,7 +587,7 @@ POSTINST
         echo "[*] [CHROOT] Creating TPM2 enrollment script"
         LUKS_UUID_FOR_ENROLL=$(blkid -s UUID -o value "$ROOT_PART" 2>/dev/null || true)
 
-        cat > /usr/local/sbin/gentoo-tpm-enroll.sh <<TPMENROLL
+        cat > /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_HEAD'
 #!/usr/bin/env bash
 # =============================================================================
 # TPM2 LUKS enrollment script — run ONCE after first successful boot
@@ -590,12 +598,17 @@ POSTINST
 # Fallback: the LUKS passphrase always works even if TPM unlock fails.
 # =============================================================================
 set -euo pipefail
+TPMENROLL_HEAD
 
-LUKS_DEV="\${1:-/dev/disk/by-uuid/$LUKS_UUID_FOR_ENROLL}"
+        # Inject the LUKS device path (needs variable expansion)
+        echo "LUKS_DEV=\"\${1:-/dev/disk/by-uuid/$LUKS_UUID_FOR_ENROLL}\"" \
+            >> /usr/local/sbin/gentoo-tpm-enroll.sh
 
-if [[ ! -b "\$LUKS_DEV" ]]; then
-    echo "[!] LUKS device not found: \$LUKS_DEV"
-    echo "    Usage: \$0 [/dev/sdXN]"
+        cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_BODY'
+
+if [[ ! -b "$LUKS_DEV" ]]; then
+    echo "[!] LUKS device not found: $LUKS_DEV"
+    echo "    Usage: $0 [/dev/sdXN]"
     exit 1
 fi
 
@@ -606,32 +619,51 @@ if ! systemd-cryptenroll --tpm2-device=list 2>&1 | grep -q 'PATH'; then
 fi
 
 echo "[*] Current LUKS keyslots:"
-systemd-cryptenroll "\$LUKS_DEV"
+systemd-cryptenroll "$LUKS_DEV"
 
 echo ""
 echo "[*] Enrolling TPM2 key bound to PCR 7"
 echo "    PCR 7  = Secure Boot state"
 echo "    Enter your LUKS passphrase when prompted."
+TPMENROLL_BODY
+
+        if [[ "${TPM_WITH_PIN:-n}" == "y" ]]; then
+            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_PIN'
+echo "    You will also be asked to set a TPM2 PIN."
+echo "    This PIN is required at every boot (together with TPM2)."
 echo ""
 
-systemd-cryptenroll \\
-    --tpm2-device=auto \\
-    --tpm2-pcrs=7 \\
-    "\$LUKS_DEV"
+systemd-cryptenroll \
+    --tpm2-device=auto \
+    --tpm2-pcrs=7 \
+    --tpm2-with-pin=yes \
+    "$LUKS_DEV"
+TPMENROLL_PIN
+        else
+            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_NOPIN'
+echo ""
+
+systemd-cryptenroll \
+    --tpm2-device=auto \
+    --tpm2-pcrs=7 \
+    "$LUKS_DEV"
+TPMENROLL_NOPIN
+        fi
+
+        cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_TAIL'
 
 echo ""
 echo "[*] Enrollment complete. Updated keyslots:"
-systemd-cryptenroll "\$LUKS_DEV"
+systemd-cryptenroll "$LUKS_DEV"
 
 echo ""
 echo "[*] Updating /etc/crypttab for TPM2 auto-unlock..."
-LUKS_UUID_VAL=\$(blkid -s UUID -o value "\$LUKS_DEV")
-if grep -q "luks-\$LUKS_UUID_VAL\|UUID=\$LUKS_UUID_VAL" /etc/crypttab 2>/dev/null; then
-    # Add tpm2-device=auto to existing crypttab entry
-    sed -i "s|\(UUID=\$LUKS_UUID_VAL[[:space:]].*none[[:space:]]\)\(.*\)|\1\2,tpm2-device=auto|" /etc/crypttab
+LUKS_UUID_VAL=$(blkid -s UUID -o value "$LUKS_DEV")
+if grep -q "luks-$LUKS_UUID_VAL\|UUID=$LUKS_UUID_VAL" /etc/crypttab 2>/dev/null; then
+    sed -i "s|\(UUID=$LUKS_UUID_VAL[[:space:]].*none[[:space:]]\)\(.*\)|\1\2,tpm2-device=auto|" /etc/crypttab
     echo "[*] /etc/crypttab updated."
 else
-    echo "[!] Could not find UUID=\$LUKS_UUID_VAL in /etc/crypttab"
+    echo "[!] Could not find UUID=$LUKS_UUID_VAL in /etc/crypttab"
     echo "    Add 'tpm2-device=auto' to the options field manually."
 fi
 
@@ -645,8 +677,8 @@ echo "    On next reboot, LUKS will unlock automatically via TPM2."
 echo "    Your passphrase still works as fallback."
 echo ""
 echo "    To remove TPM2 unlock later:"
-echo "      systemd-cryptenroll --wipe-slot=tpm2 \$LUKS_DEV"
-TPMENROLL
+echo "      systemd-cryptenroll --wipe-slot=tpm2 $LUKS_DEV"
+TPMENROLL_TAIL
         chmod +x /usr/local/sbin/gentoo-tpm-enroll.sh
         echo "[*] [CHROOT] TPM2 enrollment script created at /usr/local/sbin/gentoo-tpm-enroll.sh"
     fi
@@ -706,6 +738,11 @@ GITCONF
         echo "    After first successful boot, run:"
         echo "      sudo /usr/local/sbin/gentoo-tpm-enroll.sh"
         echo ""
+        if [[ "${TPM_WITH_PIN:-n}" == "y" ]]; then
+            echo "    TPM2+PIN mode: you will set a PIN during enrollment."
+            echo "    This PIN is required at every boot (alongside TPM2)."
+            echo ""
+        fi
     fi
     echo "[*] grub-btrfs: install it post-reboot with:"
     echo "      emerge sys-boot/grub-btrfs"
@@ -840,6 +877,7 @@ chroot /mnt/gentoo /usr/bin/env \
     SECUREBOOT_MODSIGN="$SECUREBOOT_MODSIGN" \
     MOK_PASS="${MOK_PASS:-}" \
     TPM_UNLOCK="${TPM_UNLOCK:-n}" \
+    TPM_WITH_PIN="${TPM_WITH_PIN:-n}" \
     ROOT_PASS="$ROOT_PASS" \
     USER_NAME="$USER_NAME" \
     USER_PASS="$USER_PASS" \
