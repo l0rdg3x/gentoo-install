@@ -81,8 +81,8 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "Europe/Rome"
 
     ask_input LOCALE_GEN_SET "Localization" \
-        "Entries for /etc/locale.gen (separate multiple with \\\\\\n)\nExample: it_IT ISO-8859-1\\\\\\nit_IT.UTF-8 UTF-8" \
-        "it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8"
+        'Entries for /etc/locale.gen (separate multiple with \n)\nExample: it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8' \
+        'it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8'
 
     ask_input ESELECT_LOCALE_SET "Localization" \
         "eselect locale target — UTF8 without the dash\nExample: it_IT.UTF-8  ->  it_IT.UTF8" \
@@ -127,7 +127,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     ask_input SWAP_G "Disk" \
-        "Swap file size  (e.g. 8G, 16G, 32G)\nFor Ibernation (RAM * 1.5):" "16G"
+        "Swap file size  (e.g. 4G, 8G, 16G):" "16G"
 
     # ---- LUKS ----
     ask_yesno LUKSED "Encryption" \
@@ -231,8 +231,6 @@ fi
 # CHROOT SECTION
 # =============================================================================
 if [[ "${1:-}" == "--chroot" ]]; then
-    : "${SWAP_UUID_HOST:?SWAP_UUID_HOST not set}"
-    : "${SWAP_OFFSET_HOST:?SWAP_OFFSET_HOST not set}"
 
     echo "[*] [CHROOT] Environment ready"
     rm -f /etc/profile.d/debug* || true
@@ -390,22 +388,21 @@ KEYWORDS
     if [[ "$LUKSED" == "y" ]]; then
         LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
         ROOT_DEV="/dev/mapper/root"
-        echo "root  UUID=$LUKS_UUID  none  luks" > /etc/crypttab
+        echo "root  UUID=$LUKS_UUID  none  luks,discard" > /etc/crypttab
     else
         ROOT_DEV="$ROOT_PART"
     fi
     ROOT_UUID=$(blkid -s UUID -o value "$ROOT_DEV")
-    SWAP_UUID="$SWAP_UUID_HOST"
-    SWAP_OFFSET="$SWAP_OFFSET_HOST"
 
     echo "[*] [CHROOT] Writing dracut config"
     mkdir -p /etc/dracut.conf.d
-    DRACUT_MODULES="btrfs resume plymouth"
+    DRACUT_MODULES="btrfs plymouth"
     [[ "$LUKSED" == "y" ]] && DRACUT_MODULES+=" crypt"
     cat > /etc/dracut.conf.d/gentoo.conf <<DRACUT
 hostonly="yes"
 add_dracutmodules+=" $DRACUT_MODULES "
 DRACUT
+
     # TPM2 kernel drivers needed in initramfs for early unlock
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
         emerge app-crypt/tpm2-tools app-crypt/tpm2-tss
@@ -417,7 +414,7 @@ TPM2CONF
     fi
 
     echo "[*] [CHROOT] Configuring /etc/default/grub"
-    CMDLINE_LINUX="root=UUID=$ROOT_UUID resume=UUID=$SWAP_UUID resume_offset=$SWAP_OFFSET quiet rw splash"
+    CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw splash"
     [[ "$LUKSED" == "y" ]] && CMDLINE_LINUX+=" rd.luks.uuid=$LUKS_UUID"
     sed -i "s|^#*GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$CMDLINE_LINUX\"|" \
         /etc/default/grub
@@ -519,12 +516,69 @@ ZRAM
     systemctl enable chronyd.service NetworkManager
     plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
 
+    # Disable hibernation: not supported with Secure Boot lockdown.
+    # Suspend-to-RAM (S3) works fine and is not affected by lockdown.
+    systemctl mask hibernate.target suspend-then-hibernate.target
+
+    # =========================================================================
+    # GRUB-BTRFS PREPARATION
+    # Configure grub-btrfs to use the correct grub.cfg path for the
+    # standalone signed GRUB in /boot/EFI/gentoo/.
+    # grub-btrfs is not emerged here (user installs it post-install),
+    # but we pre-create the config so it works out of the box.
+    # =========================================================================
+    echo "[*] [CHROOT] Pre-configuring grub-btrfs paths"
+
+    # grub-btrfs config: tell it where our grub dir lives
+    mkdir -p /etc/default/grub-btrfs
+    cat > /etc/default/grub-btrfs/config <<GRUBBTCFG
+# grub-btrfs configuration
+# Adjusted for standalone signed GRUB in /boot/EFI/gentoo/
+GRUB_BTRFS_GRUB_DIRNAME="/boot/EFI/gentoo"
+GRUB_BTRFS_MKCONFIG="/usr/local/sbin/update-grub"
+GRUB_BTRFS_SCRIPT_CHECK="grub-mkconfig"
+GRUBBTCFG
+
+    # update-grub wrapper: always output to the correct grub.cfg location
+    cat > /usr/local/sbin/update-grub <<'UPDATEGRUB'
+#!/usr/bin/env bash
+# Wrapper: regenerate grub.cfg in the standalone GRUB's EFI directory.
+# This ensures grub-btrfs, kernel installs, and manual updates all
+# write to the correct location.
+set -euo pipefail
+GRUB_CFG="/boot/EFI/gentoo/grub.cfg"
+echo "[update-grub] Generating $GRUB_CFG ..."
+GRUB_CFG="$GRUB_CFG" grub-mkconfig -o "$GRUB_CFG"
+echo "[update-grub] Done."
+UPDATEGRUB
+    chmod +x /usr/local/sbin/update-grub
+
+    # systemd drop-in for grub-btrfsd: use update-grub and correct env
+    mkdir -p /etc/systemd/system/grub-btrfsd.service.d
+    cat > /etc/systemd/system/grub-btrfsd.service.d/override.conf <<'GRUBBTOVERRIDE'
+[Service]
+# Clear the default ExecStart, then set ours
+ExecStart=
+ExecStart=/usr/bin/grub-btrfsd --syslog /.snapshots
+Environment="GRUB_CFG=/boot/EFI/gentoo/grub.cfg"
+GRUBBTOVERRIDE
+
+    # Also make installkernel use our update-grub for grub.cfg regeneration
+    mkdir -p /etc/kernel
+    cat > /etc/kernel/postinst.d/99-update-grub <<'POSTINST'
+#!/usr/bin/env bash
+# Regenerate grub.cfg after kernel install
+exec /usr/local/sbin/update-grub
+POSTINST
+    chmod +x /etc/kernel/postinst.d/99-update-grub
+
     # ---- TPM2 enrollment script (runs after first reboot) ----
     # systemd-cryptenroll cannot be run during install chroot because the TPM
     # PCR values are not valid until the system boots normally for the first time.
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
         echo "[*] [CHROOT] Creating TPM2 enrollment script"
         LUKS_UUID_FOR_ENROLL=$(blkid -s UUID -o value "$ROOT_PART" 2>/dev/null || true)
+
         cat > /usr/local/sbin/gentoo-tpm-enroll.sh <<TPMENROLL
 #!/usr/bin/env bash
 # =============================================================================
@@ -560,9 +614,9 @@ echo "    PCR 7  = Secure Boot state"
 echo "    Enter your LUKS passphrase when prompted."
 echo ""
 
-systemd-cryptenroll \
-    --tpm2-device=auto \
-    --tpm2-pcrs=7 \
+systemd-cryptenroll \\
+    --tpm2-device=auto \\
+    --tpm2-pcrs=7 \\
     "\$LUKS_DEV"
 
 echo ""
@@ -630,6 +684,12 @@ GITCONF
     echo "[*] EFI partition layout:"
     find /boot/EFI -name "*.efi" | sort
     echo ""
+    echo "[*] GRUB config location:"
+    echo "    /boot/EFI/gentoo/grub.cfg"
+    echo ""
+    echo "[*] To regenerate grub.cfg at any time:"
+    echo "    update-grub"
+    echo ""
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         echo "[!] On FIRST REBOOT:"
         echo "    1. MokManager launches automatically"
@@ -647,6 +707,11 @@ GITCONF
         echo "      sudo /usr/local/sbin/gentoo-tpm-enroll.sh"
         echo ""
     fi
+    echo "[*] grub-btrfs: install it post-reboot with:"
+    echo "      emerge sys-boot/grub-btrfs"
+    echo "      systemctl enable --now grub-btrfsd"
+    echo "    Config is already pre-created in /etc/default/grub-btrfs/config"
+    echo ""
     echo "[*] Done. Type 'exit', unmount everything, then reboot."
     rm -f /gentoo-install.sh
     exit 0
@@ -665,13 +730,13 @@ sgdisk --zap-all "$DISK_INSTALL"
 echo "[*] [HOST] Creating GPT partition table"
 parted -s "$DISK_INSTALL" mklabel gpt
 
-echo "[*] [HOST] Creating EFI partition (1 MiB -> 513 MiB)"
-parted -s "$DISK_INSTALL" mkpart ESP fat32 1MiB 513MiB
+echo "[*] [HOST] Creating EFI partition (1 MiB -> 1025 MiB = 1 GiB)"
+parted -s "$DISK_INSTALL" mkpart ESP fat32 1MiB 1025MiB
 parted -s "$DISK_INSTALL" set 1 esp on
 mkfs.fat -F32 "$EFI_PART"
 
-echo "[*] [HOST] Creating root partition (513 MiB -> 100%)"
-parted -s "$DISK_INSTALL" mkpart primary 513MiB 100%
+echo "[*] [HOST] Creating root partition (1025 MiB -> 100%)"
+parted -s "$DISK_INSTALL" mkpart primary 1025MiB 100%
 parted -s "$DISK_INSTALL" type 2 4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709
 
 mkdir -p /mnt/gentoo
@@ -682,7 +747,7 @@ if [[ "$LUKSED" == "y" ]]; then
         -d - --batch-mode \
         || { echo "[!] luksFormat failed"; exit 1; }
     echo "[*] [HOST] [LUKS] Opening LUKS container"
-    echo -n "$LUKS_PASS" | cryptsetup luksOpen "$ROOT_PART" root \
+    echo -n "$LUKS_PASS" | cryptsetup luksOpen --allow-discards "$ROOT_PART" root \
         -d - \
         || { echo "[!] luksOpen failed"; exit 1; }
     ROOT_DEV_MNT="/dev/mapper/root"
@@ -696,7 +761,7 @@ mkfs.btrfs -f "$ROOT_DEV_MNT"
 echo "[*] [HOST] Creating Btrfs subvolumes"
 mount "$ROOT_DEV_MNT" /mnt/gentoo
 cd /mnt/gentoo
-for subvol in @ @home @log @cache @swap; do
+for subvol in @ @home @snapshots @log @cache @tmp @swap; do
     btrfs subvolume create "$subvol"
 done
 cd ~
@@ -706,12 +771,17 @@ MOUNT_OPTS="noatime,compress=zstd:3,ssd,discard=async"
 
 echo "[*] [HOST] Mounting subvolumes"
 mount -o "$MOUNT_OPTS",subvol=@      "$ROOT_DEV_MNT" /mnt/gentoo
-mkdir -p /mnt/gentoo/{boot,home,var/cache,var/log,swap}
-mount -o "$MOUNT_OPTS",subvol=@home  "$ROOT_DEV_MNT" /mnt/gentoo/home
-mount -o "$MOUNT_OPTS",subvol=@log   "$ROOT_DEV_MNT" /mnt/gentoo/var/log
-mount -o "$MOUNT_OPTS",subvol=@cache "$ROOT_DEV_MNT" /mnt/gentoo/var/cache
-mount -o noatime,subvol=@swap        "$ROOT_DEV_MNT" /mnt/gentoo/swap
+mkdir -p /mnt/gentoo/{boot,home,.snapshots,var/cache,var/log,tmp,swap}
+mount -o "$MOUNT_OPTS",subvol=@home       "$ROOT_DEV_MNT" /mnt/gentoo/home
+mount -o "$MOUNT_OPTS",subvol=@snapshots  "$ROOT_DEV_MNT" /mnt/gentoo/.snapshots
+mount -o "$MOUNT_OPTS",subvol=@log        "$ROOT_DEV_MNT" /mnt/gentoo/var/log
+mount -o "$MOUNT_OPTS",subvol=@cache      "$ROOT_DEV_MNT" /mnt/gentoo/var/cache
+mount -o noatime,subvol=@tmp              "$ROOT_DEV_MNT" /mnt/gentoo/tmp
+mount -o noatime,nodatacow,subvol=@swap   "$ROOT_DEV_MNT" /mnt/gentoo/swap
 mount "$EFI_PART" /mnt/gentoo/boot
+
+# /tmp permissions: world-writable + sticky bit
+chmod 1777 /mnt/gentoo/tmp
 
 echo "[*] [HOST] Creating swap file ($SWAP_G)"
 truncate -s 0 /mnt/gentoo/swap/swap.img
@@ -721,13 +791,6 @@ fallocate -l "$SWAP_G" /mnt/gentoo/swap/swap.img
 chmod 0600 /mnt/gentoo/swap/swap.img
 mkswap /mnt/gentoo/swap/swap.img
 swapon /mnt/gentoo/swap/swap.img
-
-echo "[*] [HOST] Computing hibernation resume parameters"
-SWAP_UUID_HOST=$(blkid -s UUID -o value "$ROOT_DEV_MNT")
-SWAP_OFFSET_HOST=$(btrfs inspect-internal map-swapfile -r /mnt/gentoo/swap/swap.img)
-echo "    SWAP_UUID_HOST   = $SWAP_UUID_HOST"
-echo "    SWAP_OFFSET_HOST = $SWAP_OFFSET_HOST"
-export SWAP_UUID_HOST SWAP_OFFSET_HOST
 
 echo "[*] [HOST] Downloading stage3"
 cd /mnt/gentoo
@@ -780,8 +843,6 @@ chroot /mnt/gentoo /usr/bin/env \
     ROOT_PASS="$ROOT_PASS" \
     USER_NAME="$USER_NAME" \
     USER_PASS="$USER_PASS" \
-    SWAP_UUID_HOST="$SWAP_UUID_HOST" \
-    SWAP_OFFSET_HOST="$SWAP_OFFSET_HOST" \
     GRUB_PASSWORD_ENABLE="${GRUB_PASSWORD_ENABLE:-n}" \
     GRUB_PASS="${GRUB_PASS:-}" \
     /bin/bash /gentoo-install.sh --chroot
