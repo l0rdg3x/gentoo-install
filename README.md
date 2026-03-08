@@ -8,7 +8,7 @@ An interactive installation script for Gentoo Linux desktop systems. It walks yo
 
 - **Interactive dialog wizard** — no need to edit the script; every option is configured at runtime
 - **LUKS full-disk encryption** with optional **TPM2 auto-unlock** (PCR 7) and optional **TPM2+PIN** mode
-- **Btrfs** with subvolumes (`@`, `@home`, `@snapshots`, `@log`, `@cache`, `@tmp`, `@swap`) and zstd compression
+- **Btrfs** with subvolumes (`@`, `@home`, `@log`, `@cache`, `@tmp`, `@swap`) and zstd compression
 - **Secure Boot** via shim + pre-signed standalone GRUB + sbctl MOK keys + kernel module signing
 - **GRUB password protection** — optional password to prevent editing boot parameters
 - **Plymouth** boot splash with theme selection (solar, bgrt, spinner, tribar)
@@ -171,7 +171,6 @@ This writes to the correct path (`/boot/EFI/gentoo/grub.cfg`) used by the standa
 |---|---|---|
 | `@` | `/` | `noatime,compress=zstd:3,ssd,discard=async` |
 | `@home` | `/home` | same |
-| `@snapshots` | `/.snapshots` | same |
 | `@log` | `/var/log` | same |
 | `@cache` | `/var/cache` | same |
 | `@tmp` | `/tmp` | `noatime` (mode 1777) |
