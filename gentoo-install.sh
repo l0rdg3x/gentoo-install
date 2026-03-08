@@ -544,7 +544,6 @@ ZRAM
 # Adjusted for standalone signed GRUB in /boot/EFI/gentoo/
 GRUB_BTRFS_GRUB_DIRNAME="/boot/EFI/gentoo"
 GRUB_BTRFS_MKCONFIG="/usr/local/sbin/update-grub"
-GRUB_BTRFS_SCRIPT_CHECK="grub-mkconfig"
 GRUBBTCFG
 
     # update-grub wrapper: always output to the correct grub.cfg location
