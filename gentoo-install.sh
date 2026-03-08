@@ -798,7 +798,7 @@ mkfs.btrfs -f "$ROOT_DEV_MNT"
 echo "[*] [HOST] Creating Btrfs subvolumes"
 mount "$ROOT_DEV_MNT" /mnt/gentoo
 cd /mnt/gentoo
-for subvol in @ @home @snapshots @log @cache @tmp @swap; do
+for subvol in @ @home @log @cache @tmp @swap; do
     btrfs subvolume create "$subvol"
 done
 cd ~
@@ -810,7 +810,6 @@ echo "[*] [HOST] Mounting subvolumes"
 mount -o "$MOUNT_OPTS",subvol=@      "$ROOT_DEV_MNT" /mnt/gentoo
 mkdir -p /mnt/gentoo/{boot,home,.snapshots,var/cache,var/log,tmp,swap}
 mount -o "$MOUNT_OPTS",subvol=@home       "$ROOT_DEV_MNT" /mnt/gentoo/home
-mount -o "$MOUNT_OPTS",subvol=@snapshots  "$ROOT_DEV_MNT" /mnt/gentoo/.snapshots
 mount -o "$MOUNT_OPTS",subvol=@log        "$ROOT_DEV_MNT" /mnt/gentoo/var/log
 mount -o "$MOUNT_OPTS",subvol=@cache      "$ROOT_DEV_MNT" /mnt/gentoo/var/cache
 mount -o noatime,subvol=@tmp              "$ROOT_DEV_MNT" /mnt/gentoo/tmp
