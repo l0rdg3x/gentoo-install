@@ -136,16 +136,9 @@ if [[ "${1:-}" != "--chroot" ]]; then
         ask_pass LUKS_PASS "Encryption" "LUKS passphrase:"
         ask_yesno TPM_UNLOCK "Encryption" \
             "Enable automatic TPM2 unlock for LUKS?\n\nThe LUKS passphrase will still work as fallback.\nTPM enrollment runs after first reboot via /usr/local/sbin/gentoo-tpm-enroll.sh" "n"
-        if [[ "$TPM_UNLOCK" == "y" ]]; then
-            ask_yesno TPM_WITH_PIN "Encryption" \
-                "Require a PIN together with TPM2?\n\nAdds a second factor: TPM (something you have)\n+ PIN (something you know).\nProtects against theft of the whole device." "n"
-        else
-            TPM_WITH_PIN="n"
-        fi
     else
         LUKS_PASS=""
         TPM_UNLOCK="n"
-        TPM_WITH_PIN="n"
     fi
 
     # ---- Hardware ----
@@ -197,7 +190,6 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Swap            : $SWAP_G
   LUKS            : $LUKSED
   TPM2 unlock     : $TPM_UNLOCK
-  TPM2 + PIN      : $TPM_WITH_PIN
 
   Binary packages : $BINHOST  (v3: $BINHOST_V3)
   Video cards     : $VIDEOCARDS
@@ -231,7 +223,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     export ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
-    export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK TPM_WITH_PIN
+    export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
     export GRUB_PASSWORD_ENABLE GRUB_PASS
 fi
 
@@ -624,30 +616,15 @@ echo ""
 echo "[*] Enrolling TPM2 key bound to PCR 7"
 echo "    PCR 7  = Secure Boot state"
 echo "    Enter your LUKS passphrase when prompted."
+echo ""
 TPMENROLL_BODY
 
-        if [[ "${TPM_WITH_PIN:-n}" == "y" ]]; then
-            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_PIN'
-echo "    You will also be asked to set a TPM2 PIN."
-echo "    This PIN is required at every boot (together with TPM2)."
-echo ""
-
-systemd-cryptenroll \
-    --tpm2-device=auto \
-    --tpm2-pcrs=7 \
-    --tpm2-with-pin=yes \
-    "$LUKS_DEV"
-TPMENROLL_PIN
-        else
-            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_NOPIN'
-echo ""
-
+        cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_NOPIN'
 systemd-cryptenroll \
     --tpm2-device=auto \
     --tpm2-pcrs=7 \
     "$LUKS_DEV"
 TPMENROLL_NOPIN
-        fi
 
         cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_TAIL'
 
@@ -737,11 +714,6 @@ GITCONF
         echo "    After first successful boot, run:"
         echo "      sudo /usr/local/sbin/gentoo-tpm-enroll.sh"
         echo ""
-        if [[ "${TPM_WITH_PIN:-n}" == "y" ]]; then
-            echo "    TPM2+PIN mode: you will set a PIN during enrollment."
-            echo "    This PIN is required at every boot (alongside TPM2)."
-            echo ""
-        fi
     fi
     echo "[*] grub-btrfs: install it post-reboot with:"
     echo "      emerge sys-boot/grub-btrfs"
@@ -875,7 +847,6 @@ chroot /mnt/gentoo /usr/bin/env \
     SECUREBOOT_MODSIGN="$SECUREBOOT_MODSIGN" \
     MOK_PASS="${MOK_PASS:-}" \
     TPM_UNLOCK="${TPM_UNLOCK:-n}" \
-    TPM_WITH_PIN="${TPM_WITH_PIN:-n}" \
     ROOT_PASS="$ROOT_PASS" \
     USER_NAME="$USER_NAME" \
     USER_PASS="$USER_PASS" \
