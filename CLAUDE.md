@@ -88,7 +88,6 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `LUKSED` | `y`/`n` | Enable LUKS encryption |
 | `LUKS_PASS` | string | LUKS passphrase |
 | `TPM_UNLOCK` | `y`/`n` | Enable TPM2 LUKS auto-unlock |
-| `TPM_WITH_PIN` | `y`/`n` | Require PIN with TPM2 |
 | `VIDEOCARDS` | string | `VIDEO_CARDS` value for make.conf |
 | `INTEL_CPU_MICROCODE` | `y`/`n` | Install Intel microcode |
 | `PLYMOUTH_THEME_SET` | string | `solar`/`bgrt`/`spinner`/`tribar` |
@@ -179,7 +178,7 @@ TPM2 enrollment **cannot** happen during install (PCR values are invalid in chro
 sudo /usr/local/sbin/gentoo-tpm-enroll.sh
 ```
 
-This uses `systemd-cryptenroll` to bind the LUKS key to PCR 7 (Secure Boot state). With `TPM_WITH_PIN=y`, the user also sets a PIN during enrollment. The LUKS passphrase always works as a fallback.
+This uses `systemd-cryptenroll` to bind the LUKS key to PCR 7 (Secure Boot state). The LUKS passphrase always works as a fallback.
 
 ---
 
