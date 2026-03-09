@@ -455,6 +455,23 @@ export superusers
 GRUBPWD
     fi
 
+    # Fix ${prefix} for standalone signed GRUB.
+    # Standalone GRUB (grub-mkstandalone) sets prefix=(memdisk)/boot/grub
+    # at runtime, which breaks grub-btrfs and anything else that uses
+    # ${prefix} to locate files on disk.  Override prefix with $cmdpath,
+    # which GRUB firmware sets to the directory the EFI binary loaded from.
+    cat > /etc/grub.d/01_efi_prefix <<'EFIPREFIX'
+#!/usr/bin/env bash
+cat << 'GRUBCFG'
+# Override prefix for standalone signed GRUB.
+# $cmdpath = directory from which grubx64.efi was loaded (e.g. (hd0,gpt1)/EFI/gentoo)
+if [ -n "$cmdpath" ]; then
+    set prefix="$cmdpath"
+fi
+GRUBCFG
+EFIPREFIX
+    chmod +x /etc/grub.d/01_efi_prefix
+
     echo "[*] [CHROOT] Generating grub.cfg in ESP"
     GRUB_CFG=/boot/EFI/gentoo/grub.cfg \
         grub-mkconfig -o /boot/EFI/gentoo/grub.cfg
