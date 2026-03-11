@@ -6,7 +6,7 @@ This is a single-file Bash script (`gentoo-install.sh`) that automates Gentoo Li
 
 **Target audience**: Personal use / desktop Gentoo installs on AMD64 hardware.
 **License**: GPLv3
-**Architecture**: x86_64 (amd64) only; systemd profiles only (OpenRC not supported).
+**Architecture**: x86_64 (amd64) only; supports both systemd and OpenRC init systems.
 
 ---
 
@@ -14,7 +14,7 @@ This is a single-file Bash script (`gentoo-install.sh`) that automates Gentoo Li
 
 ```
 gentoo-install/
-├── gentoo-install.sh   # The entire installer (886 lines, single script)
+├── gentoo-install.sh   # The entire installer (~1060 lines, single script)
 ├── README.md           # User-facing documentation
 └── LICENSE             # GPLv3
 ```
@@ -72,11 +72,12 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | Variable | Type | Description |
 |---|---|---|
 | `HOSTNAME` | string | System hostname |
+| `INIT_SYSTEM` | `systemd`/`openrc` | Init system to install |
 | `TIMEZONE_SET` | string | e.g. `Europe/Rome` |
 | `LOCALE_GEN_SET` | string | `/etc/locale.gen` entries (newline-separated via `\n`) |
 | `ESELECT_LOCALE_SET` | string | e.g. `it_IT.UTF8` (no dash) |
-| `SYSTEMD_LOCALE` | string | systemd keymap (e.g. `it`) |
-| `ESELECT_PROF` | string | Full Portage profile path |
+| `CONSOLE_KEYMAP` | string | Console keymap (e.g. `it`, `us`, `de`) |
+| `ESELECT_PROF` | string | Full Portage profile path (varies by init system) |
 | `BINHOST` | `y`/`n` | Use Gentoo binary package host |
 | `BINHOST_V3` | `y`/`n` | Use x86-64-v3 binaries (requires AVX2) |
 | `MIRROR` | URL | Stage3 mirror base URL |
@@ -296,7 +297,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 ## Known Limitations and TODOs
 
 - AMD64 / x86_64 only (no ARM64)
-- systemd profiles only (no OpenRC)
+- TPM2 auto-unlock uses `systemd-cryptenroll` (systemd) or `clevis` (OpenRC)
 - Desktop use only (no server-optimized stage3 option)
 - No pre-installation sanity checks / validation
 - Defaults lean toward Italian locale (`Europe/Rome`, `it_IT`, `it` keymap) — change interactively at wizard prompts
