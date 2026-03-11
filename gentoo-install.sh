@@ -468,7 +468,7 @@ TPM2CONF
             echo "[*] [CHROOT] Enabling GURU overlay for app-crypt/clevis"
             eselect repository enable guru
             emaint sync -r guru
-            cat > /etc/portage/package.accept_keywords/pkgs <<CLEVISKEYWORDS
+            cat >> /etc/portage/package.accept_keywords/pkgs <<CLEVISKEYWORDS
 app-crypt/clevis ~amd64
 dev-libs/jose ~amd64
 dev-libs/luksmeta ~amd64
