@@ -7,6 +7,7 @@ An interactive installation script for Gentoo Linux desktop systems. It walks yo
 ## Features
 
 - **Interactive dialog wizard** — no need to edit the script; every option is configured at runtime
+- **systemd and OpenRC** — choose your init system; all features work with both
 - **LUKS full-disk encryption** with optional **TPM2 auto-unlock** (PCR 7)
 - **Btrfs** with subvolumes (`@`, `@home`, `@log`, `@cache`, `@tmp`, `@swap`) and zstd compression
 - **Secure Boot** via shim + pre-signed standalone GRUB + sbctl MOK keys + kernel module signing
@@ -14,9 +15,10 @@ An interactive installation script for Gentoo Linux desktop systems. It walks yo
 - **Plymouth** boot splash with theme selection (solar, bgrt, spinner, tribar)
 - **Binary packages** — optional Gentoo binhost with x86-64 or x86-64-v3 selection for faster installs
 - **ZRAM swap** — zstd-compressed RAM swap configured automatically alongside the Btrfs swap file
+- **Suspend-to-idle** — `mem_sleep_default=s2idle` set by default in kernel cmdline for modern hardware
 - **grub-btrfs ready** — config pre-created so snapshot boot entries work out of the box after `emerge sys-boot/grub-btrfs`
 - **NVMe and SATA/SSD** support with automatic partition naming
-- **Systemd** profiles only (KDE Plasma, GNOME, Desktop, or Minimal)
+- **Portage profiles** — KDE Plasma, GNOME, Desktop, or Minimal (systemd and OpenRC variants)
 
 ## Prerequisites
 
@@ -48,8 +50,9 @@ The dialog wizard will ask for:
 | Category | Options |
 |---|---|
 | **System** | Hostname |
+| **Init system** | systemd or OpenRC |
 | **Localization** | Timezone, locale, keymap |
-| **Profile** | KDE Plasma / GNOME / Desktop / Minimal (all systemd) |
+| **Profile** | KDE Plasma / GNOME / Desktop / Minimal (systemd or OpenRC variants) |
 | **Portage** | Binary packages (y/n), x86-64-v3 binaries (y/n), mirror URL |
 | **Disk** | Target device type (NVMe/SSD), device path, swap size |
 | **Encryption** | LUKS (y/n), passphrase, TPM2 unlock (y/n) |
@@ -68,7 +71,7 @@ After confirmation, the script runs unattended through two phases:
 2. Optionally LUKS-encrypts the root partition
 3. Creates Btrfs with subvolumes and mounts everything
 4. Creates a swap file on the `@swap` subvolume
-5. Downloads and extracts the latest stage3 tarball
+5. Downloads and extracts the latest stage3 tarball (systemd or OpenRC variant)
 6. Mounts virtual filesystems and enters chroot
 
 **Chroot phase** (automatic):
@@ -82,12 +85,13 @@ After confirmation, the script runs unattended through two phases:
 8. Generates and enrolls MOK keys for Secure Boot (if selected)
 9. Configures GRUB password protection (if selected)
 10. Sets up dracut initramfs with Plymouth, Btrfs, LUKS, and TPM2 modules
-11. Configures ZRAM swap, fstab, hostname, and machine ID
+11. Configures ZRAM swap, fstab, hostname, and system identity
 12. Installs networking tools (NetworkManager, dhcpcd, wpa_supplicant, iw)
-13. Creates user accounts with sudo access
-14. Switches Portage to git-based repo sync
-15. Pre-configures grub-btrfs paths and `update-grub` wrapper
-16. Creates TPM2 enrollment script (if selected)
+13. Enables services (systemd: `systemctl enable` / OpenRC: `rc-update add`)
+14. Creates user accounts with sudo access
+15. Switches Portage to git-based repo sync
+16. Pre-configures grub-btrfs paths and `update-grub` wrapper
+17. Creates TPM2 enrollment script (if selected)
 
 ### 4. Finalize
 
@@ -121,11 +125,12 @@ If TPM2 unlock was enabled, run **after** your first successful boot:
 sudo /usr/local/sbin/gentoo-tpm-enroll.sh
 ```
 
-This binds the LUKS key to TPM2 PCR 7 (Secure Boot state). Your LUKS passphrase continues to work as a fallback. To remove TPM2 unlock later:
+This binds the LUKS key to TPM2 PCR 7 (Secure Boot state). Your LUKS passphrase continues to work as a fallback.
 
-```bash
-sudo systemd-cryptenroll --wipe-slot=tpm2 /dev/<your-luks-partition>
-```
+To remove TPM2 unlock later:
+
+- **systemd**: `sudo systemd-cryptenroll --wipe-slot=tpm2 /dev/<your-luks-partition>`
+- **OpenRC**: `sudo clevis luks unbind -d /dev/<your-luks-partition> -s <slot>` (use `cryptsetup luksDump` to find the clevis slot)
 
 ### grub-btrfs (snapshot boot entries)
 
@@ -133,7 +138,13 @@ Config is pre-created during install. Just install the package:
 
 ```bash
 emerge sys-boot/grub-btrfs
+
+# systemd:
 systemctl enable --now grub-btrfsd
+
+# OpenRC:
+rc-update add grub-btrfsd default
+rc-service grub-btrfsd start
 ```
 
 ### System update
@@ -155,6 +166,22 @@ update-grub
 ```
 
 This writes to the correct path (`/boot/EFI/gentoo/grub.cfg`) used by the standalone signed GRUB.
+
+## Init System Comparison
+
+| Feature | systemd | OpenRC |
+|---|---|---|
+| **Stage3** | `desktop-systemd` | `desktop-openrc` |
+| **USE flags** | `dist-kernel systemd` | `dist-kernel elogind` |
+| **Session management** | systemd-logind (built-in) | elogind (standalone) |
+| **ZRAM swap** | `zram-generator` (systemd config) | `zram-init` (`/etc/conf.d/zram-init`) |
+| **LUKS config** | `/etc/crypttab` | `/etc/crypttab` + `/etc/conf.d/dmcrypt` |
+| **TPM2 auto-unlock** | `systemd-cryptenroll` | `clevis` + `clevis-pin-tpm2` |
+| **Hostname** | `/etc/hostname` + `systemd-firstboot` | `/etc/hostname` + `/etc/conf.d/hostname` |
+| **Keymap** | `systemd-firstboot --keymap=` | `/etc/conf.d/keymaps` |
+| **Service management** | `systemctl enable` | `rc-update add` |
+| **Cron** | systemd timers (built-in) | `cronie` (installed automatically) |
+| **Hibernation block** | `systemctl mask hibernate.target` | Kernel cmdline (`mem_sleep_default=s2idle`) |
 
 ## Disk Layout
 
@@ -198,9 +225,10 @@ All EFI binaries live in `/boot/EFI/gentoo/`. `grub-install` is **not** used —
 | **LUKS** | AES-256 full-disk encryption (512-bit key) via `cryptsetup` |
 | **Secure Boot** | shim → signed GRUB → signed kernel; MOK keys generated by `sbctl`, enrolled via `mokutil` into shim MOKlist |
 | **Kernel module signing** | `MODULES_SIGN_HASH=sha512` with sbctl keys; unsigned modules rejected |
-| **TPM2 auto-unlock** | `systemd-cryptenroll` binds LUKS to PCR 7 (Secure Boot state) |
+| **TPM2 auto-unlock** | systemd: `systemd-cryptenroll` / OpenRC: `clevis` — binds LUKS to PCR 7 (Secure Boot state) |
 | **GRUB password** | PBKDF2-hashed password prevents editing boot entries (boot menu remains accessible) |
-| **Hibernation disabled** | `hibernate.target` and `suspend-then-hibernate.target` are masked (incompatible with Secure Boot lockdown) |
+| **Suspend-to-idle** | `mem_sleep_default=s2idle` in kernel cmdline forces S0ix sleep (modern hardware default) |
+| **Hibernation disabled** | systemd: `hibernate.target` masked; both: s2idle default prevents accidental hibernate |
 | **Sudo** | Non-root user added to `wheel` group with full sudo access |
 
 ## Customization
@@ -214,7 +242,7 @@ COMMON_FLAGS="-march=native -O2 -pipe"
 MAKEOPTS="-j$(nproc) -l$(nproc)"
 EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
-USE="dist-kernel systemd [modules-sign secureboot]"
+USE="dist-kernel systemd|elogind [modules-sign secureboot]"
 ACCEPT_LICENSE="*"
 GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="<your selection>"
@@ -224,15 +252,20 @@ Best mirrors are auto-selected via `mirrorselect`. CPU flags are auto-detected v
 
 ### Installed packages
 
-Core: `systemd`, `grub`, `shim`, `efibootmgr`, `mokutil`, `sbctl`, `btrfs-progs`, `dosfstools`, `dracut`, `plymouth`, `git`
+Core (systemd): `systemd`, `grub`, `shim`, `efibootmgr`, `mokutil`, `sbctl`, `btrfs-progs`, `dosfstools`, `dracut`, `plymouth`, `git`
+
+Core (OpenRC): `elogind`, `grub`, `shim`, `efibootmgr`, `mokutil`, `sbctl`, `btrfs-progs`, `dosfstools`, `dracut`, `plymouth`, `git`, `cronie`
 
 Kernel: `gentoo-kernel-bin` (with binhost) or `gentoo-kernel` (source-based), `linux-firmware`, `sof-firmware`, optionally `intel-microcode`
 
 Networking: `NetworkManager`, `chrony`, `dhcpcd`, `wpa_supplicant`, `iw`
 
-Utilities: `mlocate`, `sudo`, `zram-generator`, `genfstab`
+Utilities: `mlocate`, `sudo`, `genfstab`
+- systemd: `zram-generator`
+- OpenRC: `zram-init`
 
 Encryption (if LUKS): `tpm2-tools`, `tpm2-tss`
+- OpenRC TPM2: additionally `clevis`
 
 ## Troubleshooting
 
@@ -246,12 +279,12 @@ Encryption (if LUKS): `tpm2-tools`, `tpm2-tss`
 | TPM2 enrollment fails | Must be run after a real boot (not from chroot); ensure `tpm2-tools` is installed and TPM2 device exists |
 | GRUB config not updating | Use `update-grub` instead of `grub-mkconfig` directly |
 | Kernel modules fail signature check | Rebuild kernel with `emerge @module-rebuild` after MOK enrollment |
+| OpenRC services not starting | Check `rc-update show` for enabled services; use `rc-service <name> start` to start manually |
 
 ## TODO
 
 - [ ] Server use option (different stage3)
 - [ ] Pre-installation sanity checks and validation
-- [ ] OpenRC profile support
 - [ ] Multi-architecture support (ARM64)
 
 ## Contributing
