@@ -400,13 +400,13 @@ KEYWORDS
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
         emerge \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
-            app-crypt/efitools \
+            app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
             sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth
     else
         emerge \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
-            app-crypt/efitools \
+            app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
             sys-auth/elogind sys-apps/kmod dev-vcs/git sys-boot/plymouth
     fi
@@ -464,10 +464,13 @@ add_dracutmodules+=" tpm2-tss "
 TPM2CONF
         else
             echo "[*] [CHROOT] Enabling GURU overlay for app-crypt/clevis"
-            emerge app-eselect/eselect-repository dev-vcs/git
             eselect repository enable guru
             emaint sync -r guru
-            echo "app-crypt/clevis ~amd64" >> /etc/portage/package.accept_keywords/pkgs
+            cat > /etc/portage/package.accept_keywords/pkgs <<CLEVISKEYWORDS
+app-crypt/clevis ~amd64
+dev-libs/jose ~amd64
+dev-libs/luksmeta ~amd64
+CLEVISKEYWORDS
             emerge app-crypt/clevis app-crypt/tpm2-tools app-crypt/tpm2-tss
             cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
