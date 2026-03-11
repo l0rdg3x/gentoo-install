@@ -390,7 +390,7 @@ virtual/dist-kernel ~amd64
 KEYWORDS
 
     echo "[*] [CHROOT] Installing sbctl and generating MOK keys"
-    emerge app-crypt/efitools app-crypt/sbctl
+    emerge -DN app-crypt/efitools app-crypt/sbctl
     wget https://raw.githubusercontent.com/Deftera186/sbctl/8c7a57ed052f94b8f8eb32321c34736adfdf6ce7/contrib/kernel-install/91-sbctl.install -O /usr/lib/kernel/install.d/91-sbctl.install
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         sbctl create-keys
@@ -398,13 +398,13 @@ KEYWORDS
 
     echo "[*] [CHROOT] Installing core packages"
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
-        emerge \
+        emerge -DN \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
             app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
             sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth
     else
-        emerge \
+        emerge -DN \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
             app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
@@ -456,7 +456,7 @@ DRACUT
     # TPM2 kernel drivers needed in initramfs for early unlock
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
         if [[ "$INIT_SYSTEM" == "systemd" ]]; then
-            emerge app-crypt/tpm2-tools app-crypt/tpm2-tss
+            emerge -DN app-crypt/tpm2-tools app-crypt/tpm2-tss
             cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
 add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
@@ -471,7 +471,7 @@ app-crypt/clevis ~amd64
 dev-libs/jose ~amd64
 dev-libs/luksmeta ~amd64
 CLEVISKEYWORDS
-            emerge app-crypt/clevis app-crypt/tpm2-tools app-crypt/tpm2-tss
+            emerge -DN app-crypt/clevis app-crypt/tpm2-tools app-crypt/tpm2-tss
             cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
 add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
@@ -504,9 +504,9 @@ TPM2CONF
     echo "[*] [CHROOT] Installing kernel"
     KERNEL_PKG=$([[ "$BINHOST" == "y" ]] && echo "sys-kernel/gentoo-kernel-bin" \
                                           || echo "sys-kernel/gentoo-kernel")
-    emerge "$KERNEL_PKG"
-    emerge sys-kernel/linux-firmware sys-firmware/sof-firmware
-    [[ "$INTEL_CPU_MICROCODE" == "y" ]] && emerge sys-firmware/intel-microcode
+    emerge -DN "$KERNEL_PKG"
+    emerge -DN sys-kernel/linux-firmware sys-firmware/sof-firmware
+    [[ "$INTEL_CPU_MICROCODE" == "y" ]] && emerge -DN sys-firmware/intel-microcode
 
     # Boot chain: shim (pre-signed by Fedora/Microsoft)
     #               -> grubx64.efi (Gentoo pre-built signed standalone)
@@ -564,7 +564,7 @@ GRUBPWD
     # =========================================================================
     echo "[*] [CHROOT] Setting up zram"
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
-        emerge sys-apps/zram-generator sys-fs/genfstab
+        emerge -DN sys-apps/zram-generator sys-fs/genfstab
         mkdir -p /etc/systemd/zram-generator.conf.d
         cat > /etc/systemd/zram-generator.conf.d/zram0-swap.conf <<ZRAM
 [zram0]
@@ -574,7 +574,7 @@ swap-priority = 100
 fs-type = swap
 ZRAM
     else
-        emerge sys-block/zram-init sys-fs/genfstab
+        emerge -DN sys-block/zram-init sys-fs/genfstab
         cat > /etc/conf.d/zram-init <<ZRAM
 type0="swap"
 flag0=""
@@ -607,7 +607,7 @@ HNCONF
     # =========================================================================
     echo "[*] [CHROOT] Installing additional packages"
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
-        emerge \
+        emerge -DN \
             sys-apps/mlocate \
             net-misc/chrony \
             net-wireless/iw \
@@ -616,7 +616,7 @@ HNCONF
             app-admin/sudo \
             net-misc/networkmanager
     else
-        emerge \
+        emerge -DN \
             sys-apps/mlocate \
             net-misc/chrony \
             net-wireless/iw \
