@@ -3,6 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 # GENTOO AUTO-INSTALL SCRIPT
+# Supports both systemd and OpenRC init systems.
 # Boot chain: UEFI → shim (pre-signed by Microsoft/Fedora)
 #                  → grubx64.efi (Gentoo pre-built signed standalone GRUB)
 #                  → kernel in /boot/
@@ -75,6 +76,12 @@ if [[ "${1:-}" != "--chroot" ]]; then
     # ---- System ----
     ask_input HOSTNAME "System" "Hostname:" "gentoo"
 
+    # ---- Init System ----
+    ask_radio INIT_SYSTEM "Init System" \
+        "Select the init system:" \
+        "systemd" "systemd  (recommended for desktop)" "on"  \
+        "openrc"  "OpenRC   (traditional init)"         "off"
+
     # ---- Localization ----
     ask_input TIMEZONE_SET "Localization" \
         "Timezone  (search: ls -l /usr/share/zoneinfo)" \
@@ -88,17 +95,26 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "eselect locale target — UTF8 without the dash\nExample: it_IT.UTF-8  ->  it_IT.UTF8" \
         "it_IT.UTF8"
 
-    ask_input SYSTEMD_LOCALE "Localization" \
-        "systemd-firstboot keymap  (e.g. it, us, de):" \
+    ask_input CONSOLE_KEYMAP "Localization" \
+        "Console keymap  (e.g. it, us, de):" \
         "it"
 
     # ---- Profile ----
-    ask_radio ESELECT_PROF "Portage Profile" \
-        "Select a Portage profile  (only systemd profiles are supported):" \
-        "default/linux/amd64/23.0/desktop/plasma/systemd" "KDE Plasma / systemd"      "on"  \
-        "default/linux/amd64/23.0/desktop/gnome/systemd"  "GNOME / systemd"           "off" \
-        "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off" \
-        "default/linux/amd64/23.0/systemd"                "Minimal / systemd"         "off"
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        ask_radio ESELECT_PROF "Portage Profile" \
+            "Select a Portage profile:" \
+            "default/linux/amd64/23.0/desktop/plasma/systemd" "KDE Plasma / systemd"      "on"  \
+            "default/linux/amd64/23.0/desktop/gnome/systemd"  "GNOME / systemd"           "off" \
+            "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off" \
+            "default/linux/amd64/23.0/systemd"                "Minimal / systemd"         "off"
+    else
+        ask_radio ESELECT_PROF "Portage Profile" \
+            "Select a Portage profile:" \
+            "default/linux/amd64/23.0/desktop/plasma" "KDE Plasma / OpenRC"      "on"  \
+            "default/linux/amd64/23.0/desktop/gnome"  "GNOME / OpenRC"           "off" \
+            "default/linux/amd64/23.0/desktop"        "Desktop (no DE) / OpenRC" "off" \
+            "default/linux/amd64/23.0"                "Minimal / OpenRC"         "off"
+    fi
 
     # ---- Portage / binhost ----
     ask_yesno BINHOST "Portage" \
@@ -182,6 +198,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     SUMMARY="Installation summary -- please confirm:
 
   Hostname        : $HOSTNAME
+  Init system     : $INIT_SYSTEM
   Timezone        : $TIMEZONE_SET
   Locale          : $ESELECT_LOCALE_SET
   Profile         : $ESELECT_PROF
@@ -219,8 +236,8 @@ if [[ "${1:-}" != "--chroot" ]]; then
         ROOT_PART="${DISK_INSTALL}2"
     fi
 
-    export HOSTNAME TIMEZONE_SET LOCALE_GEN_SET ESELECT_LOCALE_SET SYSTEMD_LOCALE
-    export ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
+    export HOSTNAME TIMEZONE_SET LOCALE_GEN_SET ESELECT_LOCALE_SET CONSOLE_KEYMAP
+    export INIT_SYSTEM ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
@@ -232,7 +249,7 @@ fi
 # =============================================================================
 if [[ "${1:-}" == "--chroot" ]]; then
 
-    echo "[*] [CHROOT] Environment ready"
+    echo "[*] [CHROOT] Environment ready  (init=$INIT_SYSTEM)"
     rm -f /etc/profile.d/debug* || true
     echo 'GRUB_CFG=/boot/EFI/gentoo/grub.cfg' >> /etc/environment
     mkdir -p /var/db/repos/gentoo/
@@ -245,6 +262,13 @@ if [[ "${1:-}" == "--chroot" ]]; then
     eselect profile set "$ESELECT_PROF"
 
     emerge --oneshot app-portage/mirrorselect
+
+    # ---- Determine init-specific USE flag ----
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        INIT_USE="systemd"
+    else
+        INIT_USE="elogind"
+    fi
 
     echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<MAKECONF
@@ -265,7 +289,7 @@ EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
 
 FEATURES="\${FEATURES} candy parallel-fetch parallel-install"
 
-USE="dist-kernel systemd"
+USE="dist-kernel $INIT_USE"
 
 ACCEPT_LICENSE="*"
 
@@ -318,7 +342,7 @@ BINCONF
     fi
 
     if [[ -n "$EXTRA_USE" ]]; then
-        sed -i "s/^USE=\"dist-kernel systemd\"/USE=\"dist-kernel systemd${EXTRA_USE}\"/" \
+        sed -i "s/^USE=\"dist-kernel $INIT_USE\"/USE=\"dist-kernel $INIT_USE${EXTRA_USE}\"/" \
             /etc/portage/make.conf
     fi
     if [[ -n "$EXTRA_FEATURES" ]]; then
@@ -340,12 +364,19 @@ BINCONF
     env-update && source /etc/profile
 
     echo "[*] [CHROOT] Writing package.use"
-    echo "sys-kernel/installkernel dracut grub systemd" \
-        > /etc/portage/package.use/installkernel
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        echo "sys-kernel/installkernel dracut grub systemd" \
+            > /etc/portage/package.use/installkernel
+        echo "sys-apps/systemd cryptsetup tpm" \
+            > /etc/portage/package.use/systemd
+    else
+        echo "sys-kernel/installkernel dracut grub" \
+            > /etc/portage/package.use/installkernel
+        echo "sys-auth/elogind -cgroup-hybrid" \
+            > /etc/portage/package.use/elogind
+    fi
     echo "sys-boot/grub truetype mount" \
         > /etc/portage/package.use/grub
-    echo "sys-apps/systemd cryptsetup tpm" \
-        > /etc/portage/package.use/systemd
     echo "sys-apps/kmod pkcs7" \
         > /etc/portage/package.use/kmod
 
@@ -366,11 +397,19 @@ KEYWORDS
     fi
 
     echo "[*] [CHROOT] Installing core packages"
-    emerge \
-        sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
-        app-crypt/efitools \
-        sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
-        sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        emerge \
+            sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
+            app-crypt/efitools \
+            sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
+            sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth
+    else
+        emerge \
+            sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
+            app-crypt/efitools \
+            sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
+            sys-auth/elogind sys-apps/kmod dev-vcs/git sys-boot/plymouth
+    fi
 
     SHIM_EFI="/usr/share/shim/BOOTX64.EFI"
     SHIM_MM="/usr/share/shim/mmx64.efi"
@@ -385,10 +424,21 @@ KEYWORDS
     done
     echo "[*] [CHROOT] shim and signed GRUB verified OK"
 
+    # =========================================================================
+    # LUKS / CRYPTTAB
+    # =========================================================================
     if [[ "$LUKSED" == "y" ]]; then
         LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
         ROOT_DEV="/dev/mapper/root"
         echo "root  UUID=$LUKS_UUID  none  luks,discard" > /etc/crypttab
+        if [[ "$INIT_SYSTEM" == "openrc" ]]; then
+            mkdir -p /etc/conf.d
+            cat > /etc/conf.d/dmcrypt <<DMCRYPT
+target=root
+source=UUID=$LUKS_UUID
+options=--allow-discards
+DMCRYPT
+        fi
     else
         ROOT_DEV="$ROOT_PART"
     fi
@@ -405,16 +455,28 @@ DRACUT
 
     # TPM2 kernel drivers needed in initramfs for early unlock
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
-        emerge app-crypt/tpm2-tools app-crypt/tpm2-tss
-        cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
+        if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+            emerge app-crypt/tpm2-tools app-crypt/tpm2-tss
+            cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
 add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
-dracut_modules+=" tpm2-tss "
+add_dracutmodules+=" tpm2-tss "
 TPM2CONF
+        else
+            emerge app-crypt/clevis app-crypt/tpm2-tools app-crypt/tpm2-tss
+            cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
+# TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
+add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
+add_dracutmodules+=" clevis clevis-pin-tpm2 tpm2-tss "
+TPM2CONF
+        fi
     fi
 
+    # =========================================================================
+    # GRUB CONFIGURATION
+    # =========================================================================
     echo "[*] [CHROOT] Configuring /etc/default/grub"
-    CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw splash"
+    CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw splash mem_sleep_default=s2idle"
     [[ "$LUKSED" == "y" ]] && CMDLINE_LINUX+=" rd.luks.uuid=$LUKS_UUID"
     sed -i "s|^#*GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$CMDLINE_LINUX\"|" \
         /etc/default/grub
@@ -428,6 +490,9 @@ TPM2CONF
             /etc/grub.d/10_linux
     fi
 
+    # =========================================================================
+    # KERNEL
+    # =========================================================================
     echo "[*] [CHROOT] Installing kernel"
     KERNEL_PKG=$([[ "$BINHOST" == "y" ]] && echo "sys-kernel/gentoo-kernel-bin" \
                                           || echo "sys-kernel/gentoo-kernel")
@@ -486,39 +551,91 @@ GRUBPWD
     GRUB_CFG=/boot/EFI/gentoo/grub.cfg \
         grub-mkconfig -o /boot/EFI/gentoo/grub.cfg
 
+    # =========================================================================
+    # ZRAM SWAP
+    # =========================================================================
     echo "[*] [CHROOT] Setting up zram"
-    emerge sys-apps/zram-generator sys-fs/genfstab
-    mkdir -p /etc/systemd/zram-generator.conf.d
-    cat > /etc/systemd/zram-generator.conf.d/zram0-swap.conf <<ZRAM
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        emerge sys-apps/zram-generator sys-fs/genfstab
+        mkdir -p /etc/systemd/zram-generator.conf.d
+        cat > /etc/systemd/zram-generator.conf.d/zram0-swap.conf <<ZRAM
 [zram0]
 zram-size = ram / 2
 compression-algorithm = zstd
 swap-priority = 100
 fs-type = swap
 ZRAM
+    else
+        emerge sys-block/zram-init sys-fs/genfstab
+        cat > /etc/conf.d/zram-init <<ZRAM
+type0="swap"
+flag0=""
+comp_algorithm0="zstd"
+max_comp_streams0="$(nproc)"
+size0="$(( $(awk '/MemTotal/{print $2}' /proc/meminfo) / 2 ))K"
+ZRAM
+        rc-update add zram-init boot
+    fi
 
     genfstab -U / >> /etc/fstab
 
+    # =========================================================================
+    # HOSTNAME / KEYMAP / MACHINE-ID
+    # =========================================================================
     echo "$HOSTNAME" > /etc/hostname
-    systemd-machine-id-setup
-    systemd-firstboot --keymap="$SYSTEMD_LOCALE"
 
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        systemd-machine-id-setup
+        systemd-firstboot --keymap="$CONSOLE_KEYMAP"
+    else
+        cat > /etc/conf.d/hostname <<HNCONF
+hostname="$HOSTNAME"
+HNCONF
+        sed -i "s/^keymap=.*/keymap=\"$CONSOLE_KEYMAP\"/" /etc/conf.d/keymaps
+    fi
+
+    # =========================================================================
+    # ADDITIONAL PACKAGES
+    # =========================================================================
     echo "[*] [CHROOT] Installing additional packages"
-    emerge \
-        sys-apps/mlocate \
-        net-misc/chrony \
-        net-wireless/iw \
-        net-wireless/wpa_supplicant \
-        net-misc/dhcpcd \
-        app-admin/sudo \
-        net-misc/networkmanager
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        emerge \
+            sys-apps/mlocate \
+            net-misc/chrony \
+            net-wireless/iw \
+            net-wireless/wpa_supplicant \
+            net-misc/dhcpcd \
+            app-admin/sudo \
+            net-misc/networkmanager
+    else
+        emerge \
+            sys-apps/mlocate \
+            net-misc/chrony \
+            net-wireless/iw \
+            net-wireless/wpa_supplicant \
+            net-misc/dhcpcd \
+            app-admin/sudo \
+            net-misc/networkmanager \
+            sys-process/cronie
+    fi
 
-    systemctl enable chronyd.service NetworkManager
-    plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
-
-    # Disable hibernation: not supported with Secure Boot lockdown.
-    # Suspend-to-RAM (S3) works fine and is not affected by lockdown.
-    systemctl mask hibernate.target suspend-then-hibernate.target
+    # =========================================================================
+    # SERVICE ENABLEMENT
+    # =========================================================================
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        systemctl enable chronyd.service NetworkManager
+        plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+        # Disable hibernation: not supported with Secure Boot lockdown.
+        # Suspend-to-idle (s2idle) is set via kernel cmdline.
+        systemctl mask hibernate.target suspend-then-hibernate.target
+    else
+        rc-update add chronyd default
+        rc-update add NetworkManager default
+        rc-update add elogind boot
+        rc-update add cronie default
+        [[ "$LUKSED" == "y" ]] && rc-update add dmcrypt boot
+        plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+    fi
 
     # =========================================================================
     # GRUB-BTRFS PREPARATION
@@ -553,15 +670,23 @@ echo "[update-grub] Done."
 UPDATEGRUB
     chmod +x /usr/local/sbin/update-grub
 
-    # systemd drop-in for grub-btrfsd: use update-grub and correct env
-    mkdir -p /etc/systemd/system/grub-btrfsd.service.d
-    cat > /etc/systemd/system/grub-btrfsd.service.d/override.conf <<'GRUBBTOVERRIDE'
+    # Init-specific grub-btrfsd service configuration
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        mkdir -p /etc/systemd/system/grub-btrfsd.service.d
+        cat > /etc/systemd/system/grub-btrfsd.service.d/override.conf <<'GRUBBTOVERRIDE'
 [Service]
 # Clear the default ExecStart, then set ours
 ExecStart=
 ExecStart=/usr/bin/grub-btrfsd --syslog /.snapshots
 Environment="GRUB_CFG=/boot/EFI/gentoo/grub.cfg"
 GRUBBTOVERRIDE
+    else
+        mkdir -p /etc/conf.d
+        cat > /etc/conf.d/grub-btrfsd <<'GRUBBTRC'
+# grub-btrfsd OpenRC configuration
+GRUB_BTRFSD_OPTS="--syslog /.snapshots"
+GRUBBTRC
+    fi
 
     # Also make installkernel use our update-grub for grub.cfg regeneration
     mkdir -p /etc/kernel
@@ -572,14 +697,16 @@ exec /usr/local/sbin/update-grub
 POSTINST
     chmod +x /etc/kernel/postinst.d/99-update-grub
 
-    # ---- TPM2 enrollment script (runs after first reboot) ----
-    # systemd-cryptenroll cannot be run during install chroot because the TPM
-    # PCR values are not valid until the system boots normally for the first time.
+    # =========================================================================
+    # TPM2 ENROLLMENT SCRIPT (runs after first reboot)
+    # =========================================================================
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
         echo "[*] [CHROOT] Creating TPM2 enrollment script"
         LUKS_UUID_FOR_ENROLL=$(blkid -s UUID -o value "$ROOT_PART" 2>/dev/null || true)
 
-        cat > /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_HEAD'
+        if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+            # ---- systemd: use systemd-cryptenroll ----
+            cat > /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_HEAD'
 #!/usr/bin/env bash
 # =============================================================================
 # TPM2 LUKS enrollment script — run ONCE after first successful boot
@@ -592,11 +719,11 @@ POSTINST
 set -euo pipefail
 TPMENROLL_HEAD
 
-        # Inject the LUKS device path (needs variable expansion)
-        echo "LUKS_DEV=\"\${1:-/dev/disk/by-uuid/$LUKS_UUID_FOR_ENROLL}\"" \
-            >> /usr/local/sbin/gentoo-tpm-enroll.sh
+            # Inject the LUKS device path (needs variable expansion)
+            echo "LUKS_DEV=\"\${1:-/dev/disk/by-uuid/$LUKS_UUID_FOR_ENROLL}\"" \
+                >> /usr/local/sbin/gentoo-tpm-enroll.sh
 
-        cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_BODY'
+            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_BODY'
 
 if [[ ! -b "$LUKS_DEV" ]]; then
     echo "[!] LUKS device not found: $LUKS_DEV"
@@ -620,14 +747,14 @@ echo "    Enter your LUKS passphrase when prompted."
 echo ""
 TPMENROLL_BODY
 
-        cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_NOPIN'
+            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_NOPIN'
 systemd-cryptenroll \
     --tpm2-device=auto \
     --tpm2-pcrs=7 \
     "$LUKS_DEV"
 TPMENROLL_NOPIN
 
-        cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_TAIL'
+            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_TAIL'
 
 echo ""
 echo "[*] Enrollment complete. Updated keyslots:"
@@ -656,16 +783,85 @@ echo ""
 echo "    To remove TPM2 unlock later:"
 echo "      systemd-cryptenroll --wipe-slot=tpm2 $LUKS_DEV"
 TPMENROLL_TAIL
+
+        else
+            # ---- OpenRC: use clevis for TPM2 binding ----
+            cat > /usr/local/sbin/gentoo-tpm-enroll.sh <<'CLEVIS_HEAD'
+#!/usr/bin/env bash
+# =============================================================================
+# TPM2 LUKS enrollment script (clevis) — run ONCE after first successful boot
+# Binds the LUKS decryption key to TPM2 PCR 7.
+#
+# PCR 7  = Secure Boot state (firmware certs + SB on/off)
+#
+# Fallback: the LUKS passphrase always works even if TPM unlock fails.
+# =============================================================================
+set -euo pipefail
+CLEVIS_HEAD
+
+            # Inject the LUKS device path (needs variable expansion)
+            echo "LUKS_DEV=\"\${1:-/dev/disk/by-uuid/$LUKS_UUID_FOR_ENROLL}\"" \
+                >> /usr/local/sbin/gentoo-tpm-enroll.sh
+
+            cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'CLEVIS_BODY'
+
+if [[ ! -b "$LUKS_DEV" ]]; then
+    echo "[!] LUKS device not found: $LUKS_DEV"
+    echo "    Usage: $0 [/dev/sdXN]"
+    exit 1
+fi
+
+echo "[*] Checking TPM2 device..."
+if ! tpm2_getcap properties-fixed 2>/dev/null | grep -q 'TPM2_PT_MANUFACTURER'; then
+    echo "[!] No TPM2 device found. Aborting."
+    exit 1
+fi
+
+echo "[*] Current LUKS keyslots:"
+cryptsetup luksDump "$LUKS_DEV" | grep -E '^Key Slot'
+
+echo ""
+echo "[*] Enrolling TPM2 key bound to PCR 7 using clevis"
+echo "    PCR 7  = Secure Boot state"
+echo "    Enter your LUKS passphrase when prompted."
+echo ""
+
+clevis luks bind -d "$LUKS_DEV" tpm2 '{"pcr_ids":"7"}'
+
+echo ""
+echo "[*] Enrollment complete. Updated keyslots:"
+cryptsetup luksDump "$LUKS_DEV" | grep -E '^Key Slot'
+
+echo ""
+echo "[*] Rebuilding initramfs to include clevis TPM2 modules..."
+dracut --force
+
+echo ""
+echo "[!] Done. TPM2 unlock is now active."
+echo "    On next reboot, LUKS will unlock automatically via TPM2."
+echo "    Your passphrase still works as fallback."
+echo ""
+echo "    To remove TPM2 unlock later:"
+echo "      clevis luks unbind -d $LUKS_DEV -s <slot>"
+echo "      (use 'cryptsetup luksDump $LUKS_DEV' to find the clevis slot)"
+CLEVIS_BODY
+        fi
         chmod +x /usr/local/sbin/gentoo-tpm-enroll.sh
         echo "[*] [CHROOT] TPM2 enrollment script created at /usr/local/sbin/gentoo-tpm-enroll.sh"
     fi
 
+    # =========================================================================
+    # USERS
+    # =========================================================================
     echo "[*] [CHROOT] Setting up users"
     echo "root:$ROOT_PASS" | chpasswd
     useradd -m -G users,wheel,audio,cdrom,usb,video -s /bin/bash "$USER_NAME"
     echo "${USER_NAME}:${USER_PASS}" | chpasswd
     sed -i 's/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
+    # =========================================================================
+    # PORTAGE REPO: SWITCH TO GIT
+    # =========================================================================
     echo "[*] [CHROOT] Switching Portage repo to git"
     mkdir -p /etc/portage/repos.conf/
     cat > /etc/portage/repos.conf/gentoo.conf <<GITCONF
@@ -685,6 +881,9 @@ GITCONF
     rm -rf /var/db/repos/gentoo/*
     emaint sync
 
+    # =========================================================================
+    # CLEANUP & SUMMARY
+    # =========================================================================
     echo "[*] [CHROOT] Cleanup"
     rm -f /stage3-*.tar.*
     swapoff /swap/swap.img || true
@@ -718,7 +917,12 @@ GITCONF
     fi
     echo "[*] grub-btrfs: install it post-reboot with:"
     echo "      emerge sys-boot/grub-btrfs"
-    echo "      systemctl enable --now grub-btrfsd"
+    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        echo "      systemctl enable --now grub-btrfsd"
+    else
+        echo "      rc-update add grub-btrfsd default"
+        echo "      rc-service grub-btrfsd start"
+    fi
     echo "    Config is already pre-created in /etc/default/grub-btrfs/config"
     echo ""
     echo "[*] Done. Type 'exit', unmount everything, then reboot."
@@ -800,11 +1004,12 @@ chmod 0600 /mnt/gentoo/swap/swap.img
 mkswap /mnt/gentoo/swap/swap.img
 swapon /mnt/gentoo/swap/swap.img
 
-echo "[*] [HOST] Downloading stage3"
+echo "[*] [HOST] Downloading stage3 ($INIT_SYSTEM)"
 cd /mnt/gentoo
-LATEST=$(curl -s "$MIRROR/latest-stage3-amd64-desktop-systemd.txt")
+STAGE3_VARIANT="desktop-${INIT_SYSTEM}"
+LATEST=$(curl -s "$MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt")
 STAGE3=$(echo "$LATEST" \
-    | grep 'stage3-amd64-desktop-systemd-.*\.tar\.xz' \
+    | grep "stage3-amd64-${STAGE3_VARIANT}-.*\.tar\.xz" \
     | grep -v '\.CONTENTS\|\.DIGESTS\|\.asc' \
     | cut -d' ' -f1)
 wget "$MIRROR/$STAGE3"
@@ -827,10 +1032,11 @@ chmod +x /mnt/gentoo/gentoo-install.sh
 
 chroot /mnt/gentoo /usr/bin/env \
     HOSTNAME="$HOSTNAME" \
+    INIT_SYSTEM="$INIT_SYSTEM" \
     TIMEZONE_SET="$TIMEZONE_SET" \
     LOCALE_GEN_SET="$LOCALE_GEN_SET" \
     ESELECT_LOCALE_SET="$ESELECT_LOCALE_SET" \
-    SYSTEMD_LOCALE="$SYSTEMD_LOCALE" \
+    CONSOLE_KEYMAP="$CONSOLE_KEYMAP" \
     ESELECT_PROF="$ESELECT_PROF" \
     DISK_INSTALL="$DISK_INSTALL" \
     DEV_INSTALL="$DEV_INSTALL" \
