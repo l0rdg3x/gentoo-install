@@ -463,6 +463,11 @@ add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
 add_dracutmodules+=" tpm2-tss "
 TPM2CONF
         else
+            echo "[*] [CHROOT] Enabling GURU overlay for app-crypt/clevis"
+            emerge app-eselect/eselect-repository dev-vcs/git
+            eselect repository enable guru
+            emaint sync -r guru
+            echo "app-crypt/clevis ~amd64" >> /etc/portage/package.accept_keywords/pkgs
             emerge app-crypt/clevis app-crypt/tpm2-tools app-crypt/tpm2-tss
             cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
