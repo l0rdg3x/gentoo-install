@@ -591,6 +591,26 @@ ZRAM
 
     genfstab -U / >> /etc/fstab
 
+    # For OpenRC, the 'swap' service runs before 'localmount', so the @swap
+    # Btrfs subvolume is not yet mounted when swapon is attempted.
+    # Fix: mark the swap file as 'noauto' in fstab (so OpenRC's swap service
+    # skips it), then activate it via /etc/local.d/ which runs after localmount.
+    if [[ "$INIT_SYSTEM" == "openrc" ]]; then
+        sed -i 's|\(/swap/swap\.img\s\+none\s\+swap\s\+\)\(defaults\)|\1noauto|' /etc/fstab
+        mkdir -p /etc/local.d
+        cat > /etc/local.d/swap-file.start <<'SWAPSTART'
+#!/bin/sh
+swapon /swap/swap.img
+SWAPSTART
+        chmod +x /etc/local.d/swap-file.start
+        cat > /etc/local.d/swap-file.stop <<'SWAPSTOP'
+#!/bin/sh
+swapoff /swap/swap.img
+SWAPSTOP
+        chmod +x /etc/local.d/swap-file.stop
+        rc-update add local default
+    fi
+
     # =========================================================================
     # HOSTNAME / KEYMAP / MACHINE-ID
     # =========================================================================
