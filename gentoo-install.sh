@@ -830,7 +830,7 @@ if ! tpm2_getcap properties-fixed 2>/dev/null | grep -q 'TPM2_PT_MANUFACTURER'; 
 fi
 
 echo "[*] Current LUKS keyslots:"
-cryptsetup luksDump "$LUKS_DEV" | grep -E '^Key Slot'
+cryptsetup luksDump "$LUKS_DEV"
 
 echo ""
 echo "[*] Enrolling TPM2 key bound to PCR 7 using clevis"
@@ -842,7 +842,7 @@ clevis luks bind -d "$LUKS_DEV" tpm2 '{"pcr_ids":"7"}'
 
 echo ""
 echo "[*] Enrollment complete. Updated keyslots:"
-cryptsetup luksDump "$LUKS_DEV" | grep -E '^Key Slot'
+cryptsetup luksDump "$LUKS_DEV"
 
 echo ""
 echo "[*] Rebuilding initramfs to include clevis TPM2 modules..."
