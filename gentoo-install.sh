@@ -404,13 +404,15 @@ KEYWORDS
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
             app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
-            sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth
+            sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth \
+            sys-kernel/dracut
     else
         emerge -N \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
             app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
-            sys-auth/elogind sys-apps/kmod dev-vcs/git sys-boot/plymouth
+            sys-auth/elogind sys-apps/kmod dev-vcs/git sys-boot/plymouth \
+            sys-kernel/dracut
     fi
 
     SHIM_EFI="/usr/share/shim/BOOTX64.EFI"
