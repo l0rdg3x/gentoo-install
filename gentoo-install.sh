@@ -475,11 +475,11 @@ app-crypt/clevis ~amd64
 dev-libs/jose ~amd64
 dev-libs/luksmeta ~amd64
 CLEVISKEYWORDS
-            emerge -N app-crypt/clevis app-crypt/tpm2-tools app-crypt/tpm2-tss
+            emerge -N app-crypt/clevis app-crypt/tpm2-tools
             cat > /etc/dracut.conf.d/tpm2.conf <<TPM2CONF
 # TPM2 drivers: tpm_crb (PCIe/ACPI), tpm_tis (LPC), tpm_tis_core (common base)
 add_drivers+=" tpm tpm_tis_core tpm_tis tpm_crb "
-add_dracutmodules+=" clevis clevis-pin-tpm2 tpm2-tss "
+add_dracutmodules+=" clevis clevis-pin-tpm2 "
 TPM2CONF
         fi
     fi
