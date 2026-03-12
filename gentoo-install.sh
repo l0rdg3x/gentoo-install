@@ -667,6 +667,10 @@ HNCONF
         rc-update add cronie default
         [[ "$LUKSED" == "y" ]] && rc-update add dmcrypt boot
         plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+        # plymouth: active during boot; plymouth-quit releases the VT before
+        # gettys start so Plymouth doesn't interfere with terminal programs.
+        rc-update add plymouth boot
+        rc-update add plymouth-quit default
     fi
 
     # =========================================================================
