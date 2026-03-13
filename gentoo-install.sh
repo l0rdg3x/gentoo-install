@@ -667,6 +667,20 @@ HNCONF
         rc-update add cronie default
         [[ "$LUKSED" == "y" ]] && rc-update add dmcrypt boot
         plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+        # Plymouth is started by dracut in the initramfs.  On OpenRC the
+        # package does not ship plymouth/plymouth-quit init scripts, so we
+        # use a local.d hook to quit Plymouth once boot is complete and
+        # release the VT back to getty.
+        mkdir -p /etc/local.d
+        cat > /etc/local.d/plymouth-quit.start <<'PLYMQUIT'
+#!/bin/bash
+# Quit Plymouth so it releases the VT for normal getty/login use.
+if command -v plymouth >/dev/null 2>&1 && plymouth --ping 2>/dev/null; then
+    plymouth quit --retain-splash
+fi
+PLYMQUIT
+        chmod +x /etc/local.d/plymouth-quit.start
+        rc-update add local default
     fi
 
     # =========================================================================
