@@ -669,18 +669,31 @@ HNCONF
         plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
         # Plymouth is started by dracut in the initramfs.  On OpenRC the
         # package does not ship plymouth/plymouth-quit init scripts, so we
-        # use a local.d hook to quit Plymouth once boot is complete and
-        # release the VT back to getty.
-        mkdir -p /etc/local.d
-        cat > /etc/local.d/plymouth-quit.start <<'PLYMQUIT'
-#!/bin/bash
-# Quit Plymouth so it releases the VT for normal getty/login use.
-if command -v plymouth >/dev/null 2>&1 && plymouth --ping 2>/dev/null; then
-    plymouth quit --retain-splash
-fi
-PLYMQUIT
-        chmod +x /etc/local.d/plymouth-quit.start
-        rc-update add local default
+        # create our own.  It runs in the "boot" runlevel (before gettys)
+        # to release the framebuffer/VT early, preventing Plymouth from
+        # blocking console output and capturing keystrokes.
+        cat > /etc/init.d/plymouth-quit <<'PLYMRC'
+#!/sbin/openrc-run
+description="Stop Plymouth boot splash"
+
+depend() {
+    # Run after the root filesystem is available but before everything
+    # else that might need the console (udev, gettys, etc.).
+    need localmount
+    before *
+}
+
+start() {
+    if command -v plymouth >/dev/null 2>&1 && plymouth --ping 2>/dev/null; then
+        ebegin "Stopping Plymouth boot splash"
+        plymouth quit --retain-splash
+        eend $?
+    fi
+    return 0
+}
+PLYMRC
+        chmod +x /etc/init.d/plymouth-quit
+        rc-update add plymouth-quit boot
     fi
 
     # =========================================================================
