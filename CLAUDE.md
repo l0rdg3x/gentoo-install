@@ -14,7 +14,7 @@ This is a single-file Bash script (`gentoo-install.sh`) that automates Gentoo Li
 
 ```
 gentoo-install/
-├── gentoo-install.sh   # The entire installer (~1100 lines, single script)
+├── gentoo-install.sh   # The entire installer (~1150 lines, single script)
 ├── README.md           # User-facing documentation
 └── LICENSE             # GPLv3
 ```
@@ -36,7 +36,7 @@ Four helper functions drive all dialogs:
 - `ask_yesno VAR "Title" "Prompt" default_y_or_n` — yes/no dialog
 - `ask_radio VAR "Title" "Prompt" tag item on|off ...` — single-choice radiolist
 
-### Section 1b: Pre-Installation Checks (lines 971–1020)
+### Section 1b: Pre-Installation Checks (lines 971–1017)
 Runs on the **live host** after the dialog wizard confirms. Validates root privileges, UEFI boot mode, target disk existence, disk not mounted, required tools availability, and network/mirror connectivity before any destructive operation. Critical failures exit immediately; warnings (swap size, hostname format) are printed but do not block installation.
 
 ### Section 2: Chroot Section (lines 250–969)
@@ -44,6 +44,8 @@ Runs **inside the chroot** (triggered by `--chroot` flag). Configures the new Ge
 
 ### Section 3: Host (Pre-Chroot) Section (lines 1022–1148)
 Runs on the **live host** after pre-installation checks pass. Handles disk operations: wipe, GPT partitioning, optional LUKS formatting, Btrfs formatting and subvolume creation, swap file setup, stage3 download/extraction, and chroot entry.
+
+**Note**: The script copies itself from `/root/gentoo-install.sh` into the chroot (line 1116), not from the current directory.
 
 ---
 
@@ -59,7 +61,7 @@ User runs: ./gentoo-install.sh
     ├─ [Section 3]  Host operations:
     │     Partition disk → LUKS (optional) → Btrfs subvols
     │     → Download stage3 → Mount virtual filesystems
-    │     → Copy script to /mnt/gentoo/
+    │     → Copy script from /root/gentoo-install.sh to /mnt/gentoo/
     │
     └─ chroot /mnt/gentoo ... /bin/bash /gentoo-install.sh --chroot
           │
@@ -100,7 +102,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `SECUREBOOT_MODSIGN` | `y`/`n` | Enable Secure Boot + module signing |
 | `MOK_PASS` | string | MOK enrollment password |
 | `GRUB_PASSWORD_ENABLE` | `y`/`n` | Protect GRUB menu with password |
-| `GRUB_PASS` | string | GRUB boot menu password |
+| `GRUB_PASS` | string | GRUB boot menu password (only set if `GRUB_PASSWORD_ENABLE=y`) |
 | `ROOT_PASS` | string | Root account password |
 | `USER_NAME` | string | Non-root username |
 | `USER_PASS` | string | Non-root user password |
@@ -129,14 +131,18 @@ GPT disk:
 Btrfs subvolumes:
   @            →  /
   @home        →  /home
-  @snapshots   →  /.snapshots
   @log         →  /var/log
   @cache       →  /var/cache
   @tmp         →  /tmp
   @swap        →  /swap         (nodatacow, no compression)
 
-Btrfs mount options (all except @tmp/@swap):
-  noatime,compress=zstd:3,ssd,discard=async
+Note: /.snapshots directory is created but NO @snapshots subvolume exists.
+      The user can create it later when setting up snapper/grub-btrfs.
+
+Btrfs mount options:
+  @, @home, @log, @cache:  noatime,compress=zstd:3,ssd,discard=async
+  @tmp:                    noatime  (no compression, no ssd/discard)
+  @swap:                   noatime,nodatacow  (no compression)
 
 Swap: /swap/swap.img (Btrfs file, CoW disabled via chattr +C)
 ```
@@ -167,9 +173,10 @@ Use `update-grub` (not `grub-mkconfig` directly) when regenerating the bootloade
 
 ## Secure Boot
 
+- `sbctl` and `efitools` are always installed; `sbctl create-keys` only runs when `SECUREBOOT_MODSIGN=y`
 - Uses `sbctl` to generate MOK (Machine Owner Key) keys stored at `/var/lib/sbctl/keys/db/`
 - Keys are enrolled into shim's MOKlist via `mokutil --import`, NOT into the UEFI db directly
-- `91-sbctl.install` kernel install hook (fetched from upstream) auto-signs kernels on install
+- `91-sbctl.install` kernel install hook (fetched from `Deftera186/sbctl` fork on GitHub) auto-signs kernels on install
 - make.conf variables set: `MODULES_SIGN_KEY`, `MODULES_SIGN_CERT`, `MODULES_SIGN_HASH`, `SECUREBOOT_SIGN_KEY`, `SECUREBOOT_SIGN_CERT`
 - USE flags added: `modules-sign secureboot`
 - **First reboot**: MokManager launches automatically → enroll MOK key with the password → reboot → enable Secure Boot in UEFI
@@ -184,13 +191,16 @@ TPM2 enrollment **cannot** happen during install (PCR values are invalid in chro
 sudo /usr/local/sbin/gentoo-tpm-enroll.sh
 ```
 
-This uses `systemd-cryptenroll` to bind the LUKS key to PCR 7 (Secure Boot state). The LUKS passphrase always works as a fallback.
+- **systemd**: Uses `systemd-cryptenroll` to bind the LUKS key to PCR 7 (Secure Boot state). Installs `tpm2-tools` and `tpm2-tss`.
+- **OpenRC**: Uses `clevis luks bind` with `tpm2` pin (PCR 7). Installs `clevis` and `tpm2-tools` from the GURU overlay.
+
+The LUKS passphrase always works as a fallback.
 
 ---
 
 ## Portage / Package Management Conventions
 
-- Profile: `default/linux/amd64/23.0/...` (systemd variants only)
+- Profile: `default/linux/amd64/23.0/...` (both systemd and OpenRC variants supported)
 - Portage repo: switched from rsync to git-based sync after install
 - Package accepts keywords for `~amd64` tracked in `/etc/portage/package.accept_keywords/pkgs`
 - USE flags per-package in `/etc/portage/package.use/`
@@ -202,12 +212,22 @@ This uses `systemd-cryptenroll` to bind the LUKS key to PCR 7 (Secure Boot state
 
 ```
 COMMON_FLAGS="-march=native -O2 -pipe"
+CFLAGS="${COMMON_FLAGS}"
+CXXFLAGS="${COMMON_FLAGS}"
+FCFLAGS="${COMMON_FLAGS}"
+FFLAGS="${COMMON_FLAGS}"
+RUSTFLAGS="${RUSTFLAGS} -C target-cpu=native"
+
 MAKEOPTS="-j$(nproc) -l$(nproc)"
 EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
-USE="dist-kernel systemd"
+
+USE="dist-kernel systemd -elogind"     # systemd variant
+USE="dist-kernel elogind -systemd"     # OpenRC variant
+
 ACCEPT_LICENSE="*"
 GRUB_PLATFORMS="efi-64"
+VIDEO_CARDS="$VIDEOCARDS"
 LC_MESSAGES=C.utf8
 ```
 
@@ -277,9 +297,14 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/etc/default/grub` | GRUB configuration |
 | `/etc/default/grub-btrfs/config` | grub-btrfs paths for snapshot booting |
 | `/etc/crypttab` | LUKS device mapping (if LUKS enabled) |
-| `/etc/systemd/zram-generator.conf.d/zram0-swap.conf` | ZRAM swap (ram/2, zstd) |
+| `/etc/systemd/zram-generator.conf.d/zram0-swap.conf` | ZRAM swap (ram/2, zstd) — systemd only |
+| `/etc/conf.d/zram-init` | ZRAM swap config — OpenRC only |
 | `/etc/systemd/system/grub-btrfsd.service.d/override.conf` | grub-btrfsd systemd override |
+| `/etc/conf.d/grub-btrfsd` | grub-btrfsd OpenRC config |
+| `/etc/local.d/swap-file.start` | Activate Btrfs swap file — OpenRC only |
+| `/etc/local.d/swap-file.stop` | Deactivate Btrfs swap file — OpenRC only |
 | `/etc/kernel/postinst.d/99-update-grub` | Run update-grub after kernel installs |
+| `/usr/lib/kernel/install.d/91-sbctl.install` | Kernel install hook: auto-sign kernels via sbctl |
 | `/usr/local/sbin/update-grub` | Wrapper: grub-mkconfig → correct path |
 | `/usr/local/sbin/gentoo-tpm-enroll.sh` | TPM2 LUKS enrollment (run post-boot) |
 
@@ -292,7 +317,10 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 3. **grub-btrfs**: Install and enable for Btrfs snapshot boot entries:
    ```bash
    emerge sys-boot/grub-btrfs
+   # systemd:
    systemctl enable --now grub-btrfsd
+   # OpenRC:
+   rc-update add grub-btrfsd default && rc-service grub-btrfsd start
    ```
 4. **System update**: `emerge --update --deep --newuse @world`
 5. **Networking**: `iw`, `wpa_supplicant`, `dhcpcd`, and `NetworkManager` are pre-installed.
@@ -311,7 +339,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 ## Development Notes
 
 - The script is intentionally monolithic — resist splitting it unless there is a strong reason. The single-file design is a deliberate choice for portability during live-CD installation.
-- The chroot hand-off passes every variable explicitly via `/usr/bin/env VAR=value ...` on the `chroot` command line. If you add a new configuration variable, add it to both the `export` block (line ~230) and the `chroot` invocation (lines ~857–886).
+- The chroot hand-off passes every variable explicitly via `/usr/bin/env VAR=value ...` on the `chroot` command line. If you add a new configuration variable, add it to both the `export` block (lines 239–244) and the `chroot` invocation (lines 1119–1148).
 - `grub-install` must NOT be used — it produces an unsigned binary incompatible with the shim-based Secure Boot chain.
 - TPM2 enrollment scripts that use `systemd-cryptenroll` cannot run during chroot because PCR values are not valid until a real boot occurs.
 - When writing config files with heredocs that contain bash variables from the install context, use `<<DELIMITER` (unquoted). When writing scripts that should be literal bash on the installed system, use `<<'DELIMITER'` (quoted).
