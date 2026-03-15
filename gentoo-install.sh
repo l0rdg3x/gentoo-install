@@ -407,6 +407,9 @@ KEYWORDS
             sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth \
             sys-kernel/dracut
     else
+        cat >> /etc/portage/package.accept_keywords/pkgs <<KEYWORDPLY
+sys-boot/plymouth-openrc-plugin ~amd64
+KEYWORDPLY
         emerge -N \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
             app-crypt/efitools app-eselect/eselect-repository \
