@@ -17,6 +17,7 @@ An interactive installation script for Gentoo Linux desktop systems. It walks yo
 - **ZRAM swap** — zstd-compressed RAM swap configured automatically alongside the Btrfs swap file
 - **Suspend-to-idle** — `mem_sleep_default=s2idle` set by default in kernel cmdline for modern hardware
 - **grub-btrfs ready** — config pre-created so snapshot boot entries work out of the box after `emerge sys-boot/grub-btrfs`
+- **Pre-installation validation** — checks root privileges, UEFI mode, disk availability, required tools, and network before any destructive operation
 - **NVMe and SATA/SSD** support with automatic partition naming
 - **Portage profiles** — KDE Plasma, GNOME, Desktop, or Minimal (systemd and OpenRC variants)
 
@@ -175,7 +176,7 @@ This writes to the correct path (`/boot/EFI/gentoo/grub.cfg`) used by the standa
 | **USE flags** | `dist-kernel systemd` | `dist-kernel elogind` |
 | **Session management** | systemd-logind (built-in) | elogind (standalone) |
 | **ZRAM swap** | `zram-generator` (systemd config) | `zram-init` (`/etc/conf.d/zram-init`) |
-| **LUKS config** | `/etc/crypttab` | `/etc/crypttab` + `/etc/conf.d/dmcrypt` |
+| **LUKS config** | `/etc/crypttab` | `/etc/crypttab` |
 | **TPM2 auto-unlock** | `systemd-cryptenroll` | `clevis` + `clevis-pin-tpm2` |
 | **Hostname** | `/etc/hostname` + `systemd-firstboot` | `/etc/hostname` + `/etc/conf.d/hostname` |
 | **Keymap** | `systemd-firstboot --keymap=` | `/etc/conf.d/keymaps` |
@@ -271,7 +272,7 @@ Encryption (if LUKS): `tpm2-tools`, `tpm2-tss`
 
 | Problem | Solution |
 |---|---|
-| Script fails early | Verify target disk path is correct and unmounted |
+| Script fails early | Pre-installation checks report what is wrong — verify root privileges, UEFI mode, disk path, missing tools, or network |
 | `dialog` not found | Script auto-installs it via `emerge` or `apt-get` |
 | Network errors during stage3 download | Check internet connection; try a different mirror |
 | LUKS open fails | Double-check passphrase; ensure partition exists |
@@ -284,7 +285,6 @@ Encryption (if LUKS): `tpm2-tools`, `tpm2-tss`
 ## TODO
 
 - [ ] Server use option (different stage3)
-- [ ] Pre-installation sanity checks and validation
 - [ ] Multi-architecture support (ARM64)
 
 ## Contributing
