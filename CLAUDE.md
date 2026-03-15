@@ -14,7 +14,7 @@ This is a single-file Bash script (`gentoo-install.sh`) that automates Gentoo Li
 
 ```
 gentoo-install/
-├── gentoo-install.sh   # The entire installer (~1060 lines, single script)
+├── gentoo-install.sh   # The entire installer (~1100 lines, single script)
 ├── README.md           # User-facing documentation
 └── LICENSE             # GPLv3
 ```
@@ -25,9 +25,9 @@ There is no build system, no test suite, no CI/CD, and no separate config files.
 
 ## Script Architecture
 
-The script has **three logical sections**, controlled by a `--chroot` argument guard:
+The script has **four logical sections**, controlled by a `--chroot` argument guard:
 
-### Section 1: Dialog Config Wizard (lines 14–236)
+### Section 1: Dialog Config Wizard (lines 14–245)
 Runs on the **live host** (no `--chroot` flag). Uses the `dialog` TUI to collect all installation parameters interactively, then exports them as environment variables.
 
 Four helper functions drive all dialogs:
@@ -36,11 +36,14 @@ Four helper functions drive all dialogs:
 - `ask_yesno VAR "Title" "Prompt" default_y_or_n` — yes/no dialog
 - `ask_radio VAR "Title" "Prompt" tag item on|off ...` — single-choice radiolist
 
-### Section 2: Chroot Section (lines 241–755)
+### Section 1b: Pre-Installation Checks (lines 971–1020)
+Runs on the **live host** after the dialog wizard confirms. Validates root privileges, UEFI boot mode, target disk existence, disk not mounted, required tools availability, and network/mirror connectivity before any destructive operation. Critical failures exit immediately; warnings (swap size, hostname format) are printed but do not block installation.
+
+### Section 2: Chroot Section (lines 250–969)
 Runs **inside the chroot** (triggered by `--chroot` flag). Configures the new Gentoo system: Portage, profile, make.conf, packages, bootloader, users, and post-install scripts.
 
-### Section 3: Host (Pre-Chroot) Section (lines 757–887)
-Runs on the **live host** after the wizard. Handles disk operations: wipe, GPT partitioning, optional LUKS formatting, Btrfs formatting and subvolume creation, swap file setup, stage3 download/extraction, and chroot entry.
+### Section 3: Host (Pre-Chroot) Section (lines 1022–1148)
+Runs on the **live host** after pre-installation checks pass. Handles disk operations: wipe, GPT partitioning, optional LUKS formatting, Btrfs formatting and subvolume creation, swap file setup, stage3 download/extraction, and chroot entry.
 
 ---
 
@@ -49,9 +52,11 @@ Runs on the **live host** after the wizard. Handles disk operations: wipe, GPT p
 ```
 User runs: ./gentoo-install.sh
     │
-    ├─ [Section 1] Dialog wizard collects config → exports vars
+    ├─ [Section 1]  Dialog wizard collects config → exports vars
     │
-    ├─ [Section 3] Host operations:
+    ├─ [Section 1b] Pre-installation checks (root, UEFI, disk, tools, network)
+    │
+    ├─ [Section 3]  Host operations:
     │     Partition disk → LUKS (optional) → Btrfs subvols
     │     → Download stage3 → Mount virtual filesystems
     │     → Copy script to /mnt/gentoo/
@@ -299,7 +304,6 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 - AMD64 / x86_64 only (no ARM64)
 - TPM2 auto-unlock uses `systemd-cryptenroll` (systemd) or `clevis` (OpenRC)
 - Desktop use only (no server-optimized stage3 option)
-- No pre-installation sanity checks / validation
 - Defaults lean toward Italian locale (`Europe/Rome`, `it_IT`, `it` keymap) — change interactively at wizard prompts
 
 ---

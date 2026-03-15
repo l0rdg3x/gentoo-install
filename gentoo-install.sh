@@ -969,6 +969,54 @@ GITCONF
 fi
 
 # =============================================================================
+# PRE-INSTALLATION CHECKS
+# =============================================================================
+
+echo "[*] [HOST] Running pre-installation checks..."
+
+# Root privileges
+[[ $EUID -eq 0 ]] || { echo "[!] Must run as root."; exit 1; }
+
+# UEFI boot mode
+[[ -d /sys/firmware/efi ]] || { echo "[!] UEFI boot mode not detected. This script requires UEFI."; exit 1; }
+
+# Target disk exists and is a block device
+[[ -b "$DISK_INSTALL" ]] || { echo "[!] Target disk $DISK_INSTALL does not exist or is not a block device."; exit 1; }
+
+# Target disk is not currently mounted
+if grep -q "^${DISK_INSTALL}" /proc/mounts; then
+    echo "[!] Target disk $DISK_INSTALL (or a partition) is currently mounted. Unmount first."
+    exit 1
+fi
+
+# Required host tools
+_REQUIRED_TOOLS="sgdisk parted mkfs.fat mkfs.btrfs btrfs mount curl wget tar blkid chattr fallocate mkswap chronyd truncate"
+[[ "$LUKSED" == "y" ]] && _REQUIRED_TOOLS="$_REQUIRED_TOOLS cryptsetup"
+_MISSING=""
+for _tool in $_REQUIRED_TOOLS; do
+    command -v "$_tool" &>/dev/null || _MISSING="$_MISSING $_tool"
+done
+[[ -z "$_MISSING" ]] || { echo "[!] Missing required tools:$_MISSING"; exit 1; }
+
+# Network connectivity (mirror reachable)
+if ! curl -s --max-time 5 --head "$MIRROR" &>/dev/null; then
+    echo "[!] Cannot reach mirror $MIRROR. Check network connectivity."
+    exit 1
+fi
+
+# Swap size sanity (warning only)
+_SWAP_NUM="${SWAP_G//[^0-9]/}"
+if [[ -n "$_SWAP_NUM" ]]; then
+    (( _SWAP_NUM < 1 )) && echo "[!] Warning: Swap size $SWAP_G is unusually small (< 1G)."
+    (( _SWAP_NUM > 64 )) && echo "[!] Warning: Swap size $SWAP_G is unusually large (> 64G)."
+fi
+
+# Hostname format (warning only)
+[[ "$HOSTNAME" =~ ^[a-zA-Z0-9-]+$ ]] || echo "[!] Warning: Hostname '$HOSTNAME' contains invalid characters. Only [a-zA-Z0-9-] recommended."
+
+echo "[*] [HOST] All pre-installation checks passed."
+
+# =============================================================================
 # HOST (PRE-CHROOT) SECTION
 # =============================================================================
 
