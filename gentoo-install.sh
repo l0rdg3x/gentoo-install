@@ -389,6 +389,7 @@ sys-boot/mokutil ~amd64
 sys-kernel/gentoo-kernel-bin ~amd64
 sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
+sys-boot/plymouth-openrc-plugin ~amd64
 KEYWORDS
 
     echo "[*] [CHROOT] Installing sbctl and generating MOK keys"
