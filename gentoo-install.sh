@@ -412,7 +412,7 @@ KEYWORDS
             app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
             sys-auth/elogind sys-apps/kmod dev-vcs/git sys-boot/plymouth \
-            sys-kernel/dracut
+            sys-boot/plymouth-openrc-plugin sys-kernel/dracut
     fi
 
     SHIM_EFI="/usr/share/shim/BOOTX64.EFI"
@@ -457,6 +457,14 @@ hostonly="yes"
 add_dracutmodules+=" $DRACUT_MODULES "
 DRACUT
 
+    # On OpenRC, omit systemd-specific dracut modules that can cause
+    # conflicts (e.g. systemd-udevd taking over the console from Plymouth).
+    if [[ "$INIT_SYSTEM" == "openrc" ]]; then
+        cat >> /etc/dracut.conf.d/gentoo.conf <<DRACUT_ORC
+omit_dracutmodules+=" systemd systemd-initrd systemd-networkd dracut-systemd "
+DRACUT_ORC
+    fi
+
     # TPM2 kernel drivers needed in initramfs for early unlock
     if [[ "${TPM_UNLOCK:-n}" == "y" ]]; then
         if [[ "$INIT_SYSTEM" == "systemd" ]]; then
@@ -489,6 +497,7 @@ TPM2CONF
     # =========================================================================
     echo "[*] [CHROOT] Configuring /etc/default/grub"
     CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw splash mem_sleep_default=s2idle"
+    [[ "$INIT_SYSTEM" == "openrc" ]] && CMDLINE_LINUX+=" rd.udev.log_priority=3 vt.global_cursor_default=0"
     [[ "$LUKSED" == "y" ]] && CMDLINE_LINUX+=" rd.luks.uuid=$LUKS_UUID rd.luks.name=$LUKS_UUID=root"
     sed -i "s|^#*GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$CMDLINE_LINUX\"|" \
         /etc/default/grub
@@ -667,33 +676,9 @@ HNCONF
         rc-update add cronie default
         [[ "$LUKSED" == "y" ]] && rc-update add dmcrypt boot
         plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
-        # Plymouth is started by dracut in the initramfs.  On OpenRC the
-        # package does not ship plymouth/plymouth-quit init scripts, so we
-        # create our own.  It runs in the "boot" runlevel (before gettys)
-        # to release the framebuffer/VT early, preventing Plymouth from
-        # blocking console output and capturing keystrokes.
-        cat > /etc/init.d/plymouth-quit <<'PLYMRC'
-#!/sbin/openrc-run
-description="Stop Plymouth boot splash"
-
-depend() {
-    # Run after the root filesystem is available but before everything
-    # else that might need the console (udev, gettys, etc.).
-    need localmount
-    before *
-}
-
-start() {
-    if command -v plymouth >/dev/null 2>&1 && plymouth --ping 2>/dev/null; then
-        ebegin "Stopping Plymouth boot splash"
-        plymouth quit --retain-splash
-        eend $?
-    fi
-    return 0
-}
-PLYMRC
-        chmod +x /etc/init.d/plymouth-quit
-        rc-update add plymouth-quit boot
+        # plymouth-openrc-plugin handles Plymouth lifecycle automatically.
+        # Disable interactive mode so OpenRC doesn't conflict with Plymouth.
+        sed -i 's/^#*rc_interactive=.*/rc_interactive="NO"/' /etc/rc.conf
     fi
 
     # =========================================================================
