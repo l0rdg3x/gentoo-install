@@ -438,14 +438,6 @@ KEYWORDPLY
         LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
         ROOT_DEV="/dev/mapper/root"
         echo "root  UUID=$LUKS_UUID  none  luks,discard" > /etc/crypttab
-        if [[ "$INIT_SYSTEM" == "openrc" ]]; then
-            mkdir -p /etc/conf.d
-            cat > /etc/conf.d/dmcrypt <<DMCRYPT
-target=root
-source=UUID=$LUKS_UUID
-options=--allow-discards
-DMCRYPT
-        fi
     else
         ROOT_DEV="$ROOT_PART"
     fi
@@ -677,7 +669,6 @@ HNCONF
         rc-update add NetworkManager default
         rc-update add elogind boot
         rc-update add cronie default
-        [[ "$LUKSED" == "y" ]] && rc-update add dmcrypt boot
         plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
         # plymouth-openrc-plugin handles Plymouth lifecycle automatically.
         # Disable interactive mode so OpenRC doesn't conflict with Plymouth.
