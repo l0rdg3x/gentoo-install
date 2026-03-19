@@ -465,6 +465,13 @@ BINCONF
             /etc/portage/make.conf
     fi
 
+    # For musl-llvm-hardened, the stage3 is musl-hardened (GCC-based).
+    # Install LLVM toolchain first using GCC, before make.conf CC=clang takes effect.
+    if [[ "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
+        echo "[*] [CHROOT] Installing LLVM toolchain for musl-llvm-hardened variant"
+        CC=gcc CXX=g++ emerge -N sys-devel/clang sys-devel/llvm sys-devel/lld
+    fi
+
     echo "[*] [CHROOT] Detecting CPU flags"
     emerge --oneshot app-portage/cpuid2cpuflags
     echo "*/* $(cpuid2cpuflags)" > /etc/portage/package.use/00cpu-flags
@@ -521,13 +528,6 @@ KEYWORDS
     if [[ "${SELINUX:-n}" == "y" ]]; then
         echo "sys-kernel/gentoo-kernel selinux" \
             >> /etc/portage/package.use/kernel-hardened
-    fi
-
-    # For musl-llvm-hardened, the stage3 is hardened+musl (GCC-based).
-    # We need to emerge the LLVM toolchain before other packages.
-    if [[ "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
-        echo "[*] [CHROOT] Installing LLVM toolchain for musl-llvm-hardened variant"
-        emerge -N sys-devel/clang sys-devel/llvm sys-devel/lld
     fi
 
     echo "[*] [CHROOT] Installing core packages"
