@@ -99,31 +99,66 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "Console keymap  (e.g. it, us, de):" \
         "it"
 
+    # ---- Installation Variant ----
+    ask_radio INSTALL_VARIANT "Installation Variant" \
+        "Select the installation variant:" \
+        "standard"           "Standard (glibc + GCC) — recommended"        "on"  \
+        "llvm"               "LLVM (glibc + Clang/LLVM)"                   "off" \
+        "hardened"           "Hardened (glibc + GCC + hardened)"            "off" \
+        "musl"               "Musl (musl + GCC)"                           "off" \
+        "musl-llvm"          "Musl + LLVM (musl + Clang/LLVM)"             "off" \
+        "musl-hardened"      "Musl + Hardened (musl + GCC + hardened)"     "off" \
+        "musl-llvm-hardened" "Musl + LLVM + Hardened (experimental combo)" "off"
+
     # ---- Profile ----
-    if [[ "$INIT_SYSTEM" == "systemd" ]]; then
-        ask_radio ESELECT_PROF "Portage Profile" \
-            "Select a Portage profile:" \
-            "default/linux/amd64/23.0/desktop/plasma/systemd" "KDE Plasma / systemd"      "on"  \
-            "default/linux/amd64/23.0/desktop/gnome/systemd"  "GNOME / systemd"           "off" \
-            "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off" \
-            "default/linux/amd64/23.0/systemd"                "Minimal / systemd"         "off"
+    if [[ "$INSTALL_VARIANT" == "standard" ]]; then
+        if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+            ask_radio ESELECT_PROF "Portage Profile" \
+                "Select a Portage profile:" \
+                "default/linux/amd64/23.0/desktop/plasma/systemd" "KDE Plasma / systemd"      "on"  \
+                "default/linux/amd64/23.0/desktop/gnome/systemd"  "GNOME / systemd"           "off" \
+                "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off" \
+                "default/linux/amd64/23.0/systemd"                "Minimal / systemd"         "off"
+        else
+            ask_radio ESELECT_PROF "Portage Profile" \
+                "Select a Portage profile:" \
+                "default/linux/amd64/23.0/desktop/plasma" "KDE Plasma / OpenRC"      "on"  \
+                "default/linux/amd64/23.0/desktop/gnome"  "GNOME / OpenRC"           "off" \
+                "default/linux/amd64/23.0/desktop"        "Desktop (no DE) / OpenRC" "off" \
+                "default/linux/amd64/23.0"                "Minimal / OpenRC"         "off"
+        fi
     else
-        ask_radio ESELECT_PROF "Portage Profile" \
-            "Select a Portage profile:" \
-            "default/linux/amd64/23.0/desktop/plasma" "KDE Plasma / OpenRC"      "on"  \
-            "default/linux/amd64/23.0/desktop/gnome"  "GNOME / OpenRC"           "off" \
-            "default/linux/amd64/23.0/desktop"        "Desktop (no DE) / OpenRC" "off" \
-            "default/linux/amd64/23.0"                "Minimal / OpenRC"         "off"
+        # Non-standard variants: profile assigned automatically (no desktop variants exist)
+        _BASE="default/linux/amd64/23.0"
+        case "$INSTALL_VARIANT" in
+            llvm)               _PROF_SUFFIX="llvm" ;;
+            hardened)           _PROF_SUFFIX="hardened" ;;
+            musl)               _PROF_SUFFIX="musl" ;;
+            musl-llvm)          _PROF_SUFFIX="musl/llvm" ;;
+            musl-hardened)      _PROF_SUFFIX="musl/hardened" ;;
+            musl-llvm-hardened) _PROF_SUFFIX="musl/hardened" ;;  # base profile; LLVM added via make.conf
+        esac
+        if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+            ESELECT_PROF="${_BASE}/${_PROF_SUFFIX}/systemd"
+        else
+            ESELECT_PROF="${_BASE}/${_PROF_SUFFIX}"
+        fi
     fi
 
     # ---- Portage / binhost ----
-    ask_yesno BINHOST "Portage" \
-        "Use Gentoo binary package host?\n(Much faster installation -- recommended)" "y"
-    if [[ "$BINHOST" == "y" ]]; then
-        ask_yesno BINHOST_V3 "Portage" \
-            "Use x86-64-v3 binaries?\n(Requires AVX2 -- choose No if unsure)" "y"
-    else
+    if [[ "$INSTALL_VARIANT" != "standard" ]]; then
+        # Binhost not available for non-standard variants (musl/llvm/hardened)
+        BINHOST="n"
         BINHOST_V3="n"
+    else
+        ask_yesno BINHOST "Portage" \
+            "Use Gentoo binary package host?\n(Much faster installation -- recommended)" "y"
+        if [[ "$BINHOST" == "y" ]]; then
+            ask_yesno BINHOST_V3 "Portage" \
+                "Use x86-64-v3 binaries?\n(Requires AVX2 -- choose No if unsure)" "y"
+        else
+            BINHOST_V3="n"
+        fi
     fi
 
     ask_input MIRROR "Portage" \
@@ -199,6 +234,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
 
   Hostname        : $HOSTNAME
   Init system     : $INIT_SYSTEM
+  Variant         : $INSTALL_VARIANT
   Timezone        : $TIMEZONE_SET
   Locale          : $ESELECT_LOCALE_SET
   Profile         : $ESELECT_PROF
@@ -225,6 +261,13 @@ if [[ "${1:-}" != "--chroot" ]]; then
         exit 0
     fi
 
+    # Warn about experimental variants
+    if [[ "$INSTALL_VARIANT" != "standard" ]]; then
+        dialog --clear --title "Warning: Experimental Variant" --msgbox \
+            "The '$INSTALL_VARIANT' variant uses experimental Gentoo profiles.\n\nThese profiles are NOT officially supported for desktop use.\nBinary packages are NOT available — everything will be compiled from source.\n\nProceed only if you know what you are doing." \
+            12 72
+    fi
+
     clear
 
     # ---- Derive partition names ----
@@ -237,7 +280,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     export HOSTNAME TIMEZONE_SET LOCALE_GEN_SET ESELECT_LOCALE_SET CONSOLE_KEYMAP
-    export INIT_SYSTEM ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
+    export INIT_SYSTEM INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
@@ -249,7 +292,7 @@ fi
 # =============================================================================
 if [[ "${1:-}" == "--chroot" ]]; then
 
-    echo "[*] [CHROOT] Environment ready  (init=$INIT_SYSTEM)"
+    echo "[*] [CHROOT] Environment ready  (init=$INIT_SYSTEM  variant=$INSTALL_VARIANT)"
     rm -f /etc/profile.d/debug* || true
     echo 'GRUB_CFG=/boot/EFI/gentoo/grub.cfg' >> /etc/environment
     mkdir -p /var/db/repos/gentoo/
@@ -272,13 +315,21 @@ if [[ "${1:-}" == "--chroot" ]]; then
         INIT_DONTUSE="-systemd"
     fi
 
+    # ---- Determine variant-specific make.conf values ----
+    HARDENED_CFLAGS=""
+    case "$INSTALL_VARIANT" in
+        hardened|musl-hardened|musl-llvm-hardened)
+            HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
+            ;;
+    esac
+
     echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<MAKECONF
 # ====================
 # = GENTOO MAKE.CONF =
 # ====================
 
-COMMON_FLAGS="-march=native -O2 -pipe"
+COMMON_FLAGS="-march=native -O2 -pipe${HARDENED_CFLAGS}"
 CFLAGS="\${COMMON_FLAGS}"
 CXXFLAGS="\${COMMON_FLAGS}"
 FCFLAGS="\${COMMON_FLAGS}"
@@ -304,12 +355,36 @@ LC_MESSAGES=C.utf8
 
 MAKECONF
 
+    # LLVM toolchain configuration
+    case "$INSTALL_VARIANT" in
+        llvm|musl-llvm|musl-llvm-hardened)
+            echo "[*] [CHROOT] Configuring LLVM toolchain in make.conf"
+            cat >> /etc/portage/make.conf <<'LLVMCONF'
+
+# LLVM/Clang toolchain
+CC="clang"
+CXX="clang++"
+AR="llvm-ar"
+NM="llvm-nm"
+RANLIB="llvm-ranlib"
+
+LLVMCONF
+            ;;
+    esac
+
     echo "[*] [CHROOT] Selecting best mirrors"
     BEST_MIRROR=$(mirrorselect -s3 -b10 -S -D -o)
     echo "$BEST_MIRROR" >> /etc/portage/make.conf
 
     EXTRA_USE=""
     EXTRA_FEATURES=""
+
+    # Hardened USE flags
+    case "$INSTALL_VARIANT" in
+        hardened|musl-hardened|musl-llvm-hardened)
+            EXTRA_USE+=" hardened pie ssp"
+            ;;
+    esac
 
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         EXTRA_USE+=" modules-sign secureboot"
@@ -396,6 +471,21 @@ KEYWORDS
     wget https://raw.githubusercontent.com/Deftera186/sbctl/8c7a57ed052f94b8f8eb32321c34736adfdf6ce7/contrib/kernel-install/91-sbctl.install -O /usr/lib/kernel/install.d/91-sbctl.install
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         sbctl create-keys
+    fi
+
+    # Hardened kernel USE flag
+    case "$INSTALL_VARIANT" in
+        hardened|musl-hardened|musl-llvm-hardened)
+            echo "sys-kernel/gentoo-kernel hardened" \
+                > /etc/portage/package.use/kernel-hardened
+            ;;
+    esac
+
+    # For musl-llvm-hardened, the stage3 is hardened+musl (GCC-based).
+    # We need to emerge the LLVM toolchain before other packages.
+    if [[ "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
+        echo "[*] [CHROOT] Installing LLVM toolchain for musl-llvm-hardened variant"
+        emerge -N sys-devel/clang sys-devel/llvm sys-devel/lld
     fi
 
     echo "[*] [CHROOT] Installing core packages"
@@ -1090,9 +1180,17 @@ chmod 0600 /mnt/gentoo/swap/swap.img
 mkswap /mnt/gentoo/swap/swap.img
 swapon /mnt/gentoo/swap/swap.img
 
-echo "[*] [HOST] Downloading stage3 ($INIT_SYSTEM)"
+echo "[*] [HOST] Downloading stage3 ($INSTALL_VARIANT / $INIT_SYSTEM)"
 cd /mnt/gentoo
-STAGE3_VARIANT="desktop-${INIT_SYSTEM}"
+case "$INSTALL_VARIANT" in
+    standard)           STAGE3_VARIANT="desktop-${INIT_SYSTEM}" ;;
+    llvm)               STAGE3_VARIANT="llvm-${INIT_SYSTEM}" ;;
+    hardened)           STAGE3_VARIANT="hardened-${INIT_SYSTEM}" ;;
+    musl)               STAGE3_VARIANT="musl-${INIT_SYSTEM}" ;;
+    musl-llvm)          STAGE3_VARIANT="musl-llvm-${INIT_SYSTEM}" ;;
+    musl-hardened)      STAGE3_VARIANT="hardened+musl-${INIT_SYSTEM}" ;;
+    musl-llvm-hardened) STAGE3_VARIANT="hardened+musl-${INIT_SYSTEM}" ;;
+esac
 LATEST=$(curl -s "$MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt")
 STAGE3=$(echo "$LATEST" \
     | grep "stage3-amd64-${STAGE3_VARIANT}-.*\.tar\.xz" \
@@ -1119,6 +1217,7 @@ chmod +x /mnt/gentoo/gentoo-install.sh
 chroot /mnt/gentoo /usr/bin/env \
     HOSTNAME="$HOSTNAME" \
     INIT_SYSTEM="$INIT_SYSTEM" \
+    INSTALL_VARIANT="$INSTALL_VARIANT" \
     TIMEZONE_SET="$TIMEZONE_SET" \
     LOCALE_GEN_SET="$LOCALE_GEN_SET" \
     ESELECT_LOCALE_SET="$ESELECT_LOCALE_SET" \
