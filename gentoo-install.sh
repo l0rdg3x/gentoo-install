@@ -138,8 +138,6 @@ if [[ "${1:-}" != "--chroot" ]]; then
             musl-hardened)      _PROF_SUFFIX="musl/hardened" ;;
             musl-llvm-hardened) _PROF_SUFFIX="musl/hardened" ;;  # base profile; LLVM added via make.conf
         esac
-        # Append /selinux sub-profile when SELinux is enabled (hardened only)
-        [[ "${SELINUX:-n}" == "y" ]] && _PROF_SUFFIX+="/selinux"
         if [[ "$INIT_SYSTEM" == "systemd" ]]; then
             ESELECT_PROF="${_BASE}/${_PROF_SUFFIX}/systemd"
         else
@@ -224,10 +222,12 @@ if [[ "${1:-}" != "--chroot" ]]; then
     "Enable GRUB password?\n(Prevents editing boot parameters with 'e')" "y"
     if [[ "$GRUB_PASSWORD_ENABLE" == "y" ]]; then
         ask_pass GRUB_PASS "GRUB" "GRUB boot menu password:"
+    else
+        GRUB_PASS=""
     fi
 
     # ---- SELinux ----
-    if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
+    if [[ "$INSTALL_VARIANT" == "hardened" || "$INSTALL_VARIANT" == "musl-hardened" || "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
         ask_yesno SELINUX "SELinux" \
             "Enable SELinux (Security-Enhanced Linux)?\n\nProvides mandatory access control (MAC).\nThe system will boot in PERMISSIVE mode initially.\nYou must relabel and switch to enforcing after first boot." "n"
         if [[ "$SELINUX" == "y" ]]; then
@@ -242,6 +242,15 @@ if [[ "${1:-}" != "--chroot" ]]; then
     else
         SELINUX="n"
         SELINUX_TYPE=""
+    fi
+
+    # Apply SELinux sub-profile for non-standard hardened variants
+    if [[ "$SELINUX" == "y" && "$INSTALL_VARIANT" != "standard" ]]; then
+        if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+            ESELECT_PROF="${ESELECT_PROF%/systemd}/selinux/systemd"
+        else
+            ESELECT_PROF="${ESELECT_PROF}/selinux"
+        fi
     fi
 
     # ---- Users ----
@@ -269,7 +278,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Intel microcode : $INTEL_CPU_MICROCODE
   Plymouth theme  : $PLYMOUTH_THEME_SET
   Secure Boot     : $SECUREBOOT_MODSIGN
-  SELinux         : $SELINUX $( [[ "$SELINUX" == "y" ]] && echo "($SELINUX_TYPE)" )
+  SELinux         : $SELINUX $( [[ "$SELINUX" == "y" ]] && echo "($SELINUX_TYPE)" || true )
   Grub Password   : $GRUB_PASSWORD_ENABLE
 
   Non-root user   : $USER_NAME
