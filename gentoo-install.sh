@@ -1339,17 +1339,25 @@ case "$INSTALL_VARIANT" in
     standard)           STAGE3_VARIANT="desktop-${INIT_SYSTEM}" ;;
     llvm)               STAGE3_VARIANT="llvm-${INIT_SYSTEM}" ;;
     hardened)           STAGE3_VARIANT="hardened-${INIT_SYSTEM}" ;;
-    musl)               STAGE3_VARIANT="musl-${INIT_SYSTEM}" ;;
-    musl-llvm)          STAGE3_VARIANT="musl-llvm-${INIT_SYSTEM}" ;;
-    musl-hardened)      STAGE3_VARIANT="hardened+musl-${INIT_SYSTEM}" ;;
-    musl-llvm-hardened) STAGE3_VARIANT="hardened+musl-${INIT_SYSTEM}" ;;
+    musl)               STAGE3_VARIANT="musl" ;;
+    musl-llvm)          STAGE3_VARIANT="musl-llvm" ;;
+    musl-hardened)      STAGE3_VARIANT="musl-hardened" ;;
+    musl-llvm-hardened) STAGE3_VARIANT="musl-hardened" ;;  # no separate stage3; LLVM added via make.conf
 esac
-LATEST=$(curl -s "$MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt")
+LATEST=$(curl -sS "$MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt") || {
+    echo "[!] Failed to fetch stage3 metadata from $MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt"
+    exit 1
+}
 STAGE3=$(echo "$LATEST" \
     | grep "stage3-amd64-${STAGE3_VARIANT}-.*\.tar\.xz" \
     | grep -v '\.CONTENTS\|\.DIGESTS\|\.asc' \
-    | cut -d' ' -f1)
-wget "$MIRROR/$STAGE3"
+    | cut -d' ' -f1 || true)
+if [[ -z "$STAGE3" ]]; then
+    echo "[!] Could not find stage3 tarball in metadata for variant '$STAGE3_VARIANT'"
+    echo "[!] URL: $MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt"
+    exit 1
+fi
+wget "$MIRROR/$STAGE3" || { echo "[!] Failed to download $MIRROR/$STAGE3"; exit 1; }
 
 echo "[*] [HOST] Extracting stage3"
 tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner
