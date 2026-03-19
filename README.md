@@ -8,18 +8,20 @@ An interactive installation script for Gentoo Linux desktop systems. It walks yo
 
 - **Interactive dialog wizard** — no need to edit the script; every option is configured at runtime
 - **systemd and OpenRC** — choose your init system; all features work with both
+- **Installation variants** — standard (GCC), LLVM (Clang), hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened
 - **LUKS full-disk encryption** with optional **TPM2 auto-unlock** (PCR 7)
 - **Btrfs** with subvolumes (`@`, `@home`, `@log`, `@cache`, `@tmp`, `@swap`) and zstd compression
 - **Secure Boot** via shim + pre-signed standalone GRUB + sbctl MOK keys + kernel module signing
+- **SELinux** — optional Mandatory Access Control for the hardened variant (targeted, strict, or mls policy)
 - **GRUB password protection** — optional password to prevent editing boot parameters
 - **Plymouth** boot splash with theme selection (solar, bgrt, spinner, tribar)
-- **Binary packages** — optional Gentoo binhost with x86-64 or x86-64-v3 selection for faster installs
+- **Binary packages** — optional Gentoo binhost with x86-64 or x86-64-v3 selection (standard variant only)
 - **ZRAM swap** — zstd-compressed RAM swap configured automatically alongside the Btrfs swap file
 - **Suspend-to-idle** — `mem_sleep_default=s2idle` set by default in kernel cmdline for modern hardware
 - **grub-btrfs ready** — config pre-created so snapshot boot entries work out of the box after `emerge sys-boot/grub-btrfs`
 - **Pre-installation validation** — checks root privileges, UEFI mode, disk availability, required tools, and network before any destructive operation
 - **NVMe and SATA/SSD** support with automatic partition naming
-- **Portage profiles** — KDE Plasma, GNOME, Desktop, or Minimal (systemd and OpenRC variants)
+- **Portage profiles** — KDE Plasma, GNOME, Desktop, or Minimal for standard variant; auto-assigned for other variants
 
 ## Prerequisites
 
@@ -52,13 +54,15 @@ The dialog wizard will ask for:
 |---|---|
 | **System** | Hostname |
 | **Init system** | systemd or OpenRC |
+| **Variant** | standard, llvm, hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened |
 | **Localization** | Timezone, locale, keymap |
-| **Profile** | KDE Plasma / GNOME / Desktop / Minimal (systemd or OpenRC variants) |
-| **Portage** | Binary packages (y/n), x86-64-v3 binaries (y/n), mirror URL |
+| **Profile** | KDE Plasma / GNOME / Desktop / Minimal (standard variant); auto-assigned for others |
+| **Portage** | Binary packages (y/n, standard variant only), x86-64-v3 binaries (y/n), mirror URL |
 | **Disk** | Target device type (NVMe/SSD), device path, swap size |
 | **Encryption** | LUKS (y/n), passphrase, TPM2 unlock (y/n) |
 | **Hardware** | VIDEO_CARDS, Intel microcode (y/n) |
 | **Boot** | Plymouth theme, Secure Boot (y/n), MOK password, GRUB password (y/n) |
+| **SELinux** | Enable (y/n, hardened variant only), policy type (targeted/strict/mls) |
 | **Users** | Root password, non-root username and password |
 
 A summary screen shows all choices before anything touches the disk — cancel here to abort safely.
@@ -76,23 +80,25 @@ After confirmation, the script runs unattended through two phases:
 6. Mounts virtual filesystems and enters chroot
 
 **Chroot phase** (automatic):
-1. Syncs Portage and sets the selected profile
+1. Syncs Portage and sets the selected profile (including SELinux sub-profile if enabled)
 2. Selects best mirrors via `mirrorselect`
-3. Generates `make.conf` with native CPU flags and parallel build settings
-4. Configures binary package repository (if selected)
+3. Generates `make.conf` with native CPU flags, parallel build settings, and variant-specific flags (hardened CFLAGS, LLVM toolchain, SELinux USE flags)
+4. Configures binary package repository (standard variant only)
 5. Sets locale, timezone, and keymap
 6. Installs kernel (binary or source-based), firmware, and microcode
 7. Installs shim + pre-signed GRUB to the ESP (no `grub-install`)
-8. Generates and enrolls MOK keys for Secure Boot (if selected)
-9. Configures GRUB password protection (if selected)
-10. Sets up dracut initramfs with Plymouth, Btrfs, LUKS, and TPM2 modules
-11. Configures ZRAM swap, fstab, hostname, and system identity
-12. Installs networking tools (NetworkManager, dhcpcd, wpa_supplicant, iw)
-13. Enables services (systemd: `systemctl enable` / OpenRC: `rc-update add`)
-14. Creates user accounts with sudo access
-15. Switches Portage to git-based repo sync
-16. Pre-configures grub-btrfs paths and `update-grub` wrapper
-17. Creates TPM2 enrollment script (if selected)
+8. Installs SELinux packages, policy modules, and writes `/etc/selinux/config` (if selected)
+9. Generates and enrolls MOK keys for Secure Boot (if selected)
+10. Configures GRUB password protection (if selected)
+11. Sets up dracut initramfs with Plymouth, Btrfs, LUKS, SELinux, and TPM2 modules
+12. Configures ZRAM swap, fstab, hostname, and system identity
+13. Installs networking tools (NetworkManager, dhcpcd, wpa_supplicant, iw)
+14. Enables services (systemd: `systemctl enable` / OpenRC: `rc-update add`, including `selinux_gentoo` if enabled)
+15. Creates user accounts with sudo access
+16. Switches Portage to git-based repo sync
+17. Pre-configures grub-btrfs paths and `update-grub` wrapper
+18. Creates TPM2 enrollment script (if selected)
+19. Creates SELinux relabeling script (if selected)
 
 ### 4. Finalize
 
@@ -132,6 +138,25 @@ To remove TPM2 unlock later:
 
 - **systemd**: `sudo systemd-cryptenroll --wipe-slot=tpm2 /dev/<your-luks-partition>`
 - **OpenRC**: `sudo clevis luks unbind -d /dev/<your-luks-partition> -s <slot>` (use `cryptsetup luksDump` to find the clevis slot)
+
+### SELinux relabeling
+
+If SELinux was enabled (hardened variant only), the system boots in **permissive** mode. After the first successful boot:
+
+```bash
+sudo /usr/local/sbin/gentoo-selinux-relabel.sh
+```
+
+This relabels the entire filesystem with correct SELinux contexts. After relabeling:
+
+1. Reboot
+2. Verify with `sestatus`
+3. Switch to enforcing mode: `sudo sed -i 's/^SELINUX=permissive/SELINUX=enforcing/' /etc/selinux/config`
+4. Reboot again
+
+To temporarily test enforcing without making it permanent: `sudo setenforce 1`
+
+If enforcing mode causes problems, add `enforcing=0` to the kernel command line to force permissive mode.
 
 ### grub-btrfs (snapshot boot entries)
 
@@ -182,7 +207,24 @@ This writes to the correct path (`/boot/EFI/gentoo/grub.cfg`) used by the standa
 | **Keymap** | `systemd-firstboot --keymap=` | `/etc/conf.d/keymaps` |
 | **Service management** | `systemctl enable` | `rc-update add` |
 | **Cron** | systemd timers (built-in) | `cronie` (installed automatically) |
+| **SELinux** | Native support (no extra service) | `selinux_gentoo` init script (boot runlevel) |
 | **Hibernation block** | `systemctl mask hibernate.target` | Kernel cmdline (`mem_sleep_default=s2idle`) |
+
+## Installation Variants
+
+The installer supports 7 installation variants. The **standard** variant is recommended for most users.
+
+| Variant | Toolchain | libc | Notes |
+|---|---|---|---|
+| `standard` | GCC | glibc | Default; desktop profiles available; binary packages supported |
+| `llvm` | Clang/LLVM | glibc | Experimental; compiled from source |
+| `hardened` | GCC | glibc | Hardened CFLAGS + USE flags; SELinux available |
+| `musl` | GCC | musl | Lightweight libc; no desktop profiles |
+| `musl-llvm` | Clang/LLVM | musl | Experimental combo |
+| `musl-hardened` | GCC | musl | Hardened + musl |
+| `musl-llvm-hardened` | GCC + LLVM | musl | Most experimental; LLVM installed on top of hardened+musl |
+
+> **Note:** Non-standard variants are experimental. Binary packages are not available — everything is compiled from source. Desktop profiles (KDE, GNOME) are only available for the standard variant; other variants use auto-assigned base profiles.
 
 ## Disk Layout
 
@@ -227,6 +269,8 @@ All EFI binaries live in `/boot/EFI/gentoo/`. `grub-install` is **not** used —
 | **Secure Boot** | shim → signed GRUB → signed kernel; MOK keys generated by `sbctl`, enrolled via `mokutil` into shim MOKlist |
 | **Kernel module signing** | `MODULES_SIGN_HASH=sha512` with sbctl keys; unsigned modules rejected |
 | **TPM2 auto-unlock** | systemd: `systemd-cryptenroll` / OpenRC: `clevis` — binds LUKS to PCR 7 (Secure Boot state) |
+| **SELinux** | Optional MAC for hardened variant; targeted/strict/mls policy types; boots permissive, user switches to enforcing after relabeling |
+| **Hardened CFLAGS** | `-fstack-protector-strong -D_FORTIFY_SOURCE=2` + `hardened pie ssp` USE flags (hardened variants) |
 | **GRUB password** | PBKDF2-hashed password prevents editing boot entries (boot menu remains accessible) |
 | **Suspend-to-idle** | `mem_sleep_default=s2idle` in kernel cmdline forces S0ix sleep (modern hardware default) |
 | **Hibernation disabled** | systemd: `hibernate.target` masked; both: s2idle default prevents accidental hibernate |
@@ -239,11 +283,11 @@ All EFI binaries live in `/boot/EFI/gentoo/`. `grub-install` is **not** used —
 The generated `/etc/portage/make.conf` includes:
 
 ```
-COMMON_FLAGS="-march=native -O2 -pipe"
+COMMON_FLAGS="-march=native -O2 -pipe [-fstack-protector-strong -D_FORTIFY_SOURCE=2]"
 MAKEOPTS="-j$(nproc) -l$(nproc)"
 EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
-USE="dist-kernel systemd|elogind [modules-sign secureboot]"
+USE="dist-kernel systemd|elogind [hardened pie ssp] [selinux unconfined] [modules-sign secureboot]"
 ACCEPT_LICENSE="*"
 GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="<your selection>"
@@ -268,6 +312,8 @@ Utilities: `mlocate`, `sudo`, `genfstab`
 Encryption (if LUKS): `tpm2-tools`, `tpm2-tss`
 - OpenRC TPM2: additionally `clevis`
 
+SELinux (if enabled): `libselinux`, `policycoreutils`, `checkpolicy`, `selinux-base`, `selinux-base-policy`, `audit`, `selinux-dbus`, `selinux-networkmanager`
+
 ## Troubleshooting
 
 | Problem | Solution |
@@ -281,6 +327,9 @@ Encryption (if LUKS): `tpm2-tools`, `tpm2-tss`
 | GRUB config not updating | Use `update-grub` instead of `grub-mkconfig` directly |
 | Kernel modules fail signature check | Rebuild kernel with `emerge @module-rebuild` after MOK enrollment |
 | OpenRC services not starting | Check `rc-update show` for enabled services; use `rc-service <name> start` to start manually |
+| SELinux enforcing mode blocks services | Boot with `enforcing=0` on kernel cmdline to force permissive; fix denials with `audit2allow` |
+| SELinux relabeling fails | Try `restorecon -Rv /` manually; ensure SELinux packages are installed and policy is loaded (`semodule -B`) |
+| Non-standard variant takes very long | Expected — all packages compile from source; no binhost available for musl/llvm/hardened variants |
 
 ## TODO
 

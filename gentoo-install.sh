@@ -138,6 +138,8 @@ if [[ "${1:-}" != "--chroot" ]]; then
             musl-hardened)      _PROF_SUFFIX="musl/hardened" ;;
             musl-llvm-hardened) _PROF_SUFFIX="musl/hardened" ;;  # base profile; LLVM added via make.conf
         esac
+        # Append /selinux sub-profile when SELinux is enabled (hardened only)
+        [[ "${SELINUX:-n}" == "y" ]] && _PROF_SUFFIX+="/selinux"
         if [[ "$INIT_SYSTEM" == "systemd" ]]; then
             ESELECT_PROF="${_BASE}/${_PROF_SUFFIX}/systemd"
         else
@@ -224,6 +226,24 @@ if [[ "${1:-}" != "--chroot" ]]; then
         ask_pass GRUB_PASS "GRUB" "GRUB boot menu password:"
     fi
 
+    # ---- SELinux ----
+    if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
+        ask_yesno SELINUX "SELinux" \
+            "Enable SELinux (Security-Enhanced Linux)?\n\nProvides mandatory access control (MAC).\nThe system will boot in PERMISSIVE mode initially.\nYou must relabel and switch to enforcing after first boot." "n"
+        if [[ "$SELINUX" == "y" ]]; then
+            ask_radio SELINUX_TYPE "SELinux Policy Type" \
+                "Select the SELinux policy type:" \
+                "targeted" "Targeted (recommended — only daemons confined)" "on" \
+                "strict"   "Strict (all processes confined)"                "off" \
+                "mls"      "MLS (Multi-Level Security — advanced)"         "off"
+        else
+            SELINUX_TYPE=""
+        fi
+    else
+        SELINUX="n"
+        SELINUX_TYPE=""
+    fi
+
     # ---- Users ----
     ask_pass ROOT_PASS "Users" "Root password:"
     ask_input USER_NAME "Users" "Non-root username:" "user"
@@ -249,6 +269,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Intel microcode : $INTEL_CPU_MICROCODE
   Plymouth theme  : $PLYMOUTH_THEME_SET
   Secure Boot     : $SECUREBOOT_MODSIGN
+  SELinux         : $SELINUX $( [[ "$SELINUX" == "y" ]] && echo "($SELINUX_TYPE)" )
   Grub Password   : $GRUB_PASSWORD_ENABLE
 
   Non-root user   : $USER_NAME
@@ -284,7 +305,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
-    export GRUB_PASSWORD_ENABLE GRUB_PASS
+    export GRUB_PASSWORD_ENABLE GRUB_PASS SELINUX SELINUX_TYPE
 fi
 
 # =============================================================================
@@ -386,6 +407,12 @@ LLVMCONF
             ;;
     esac
 
+    # SELinux USE flags
+    if [[ "${SELINUX:-n}" == "y" ]]; then
+        EXTRA_USE+=" selinux"
+        [[ "$SELINUX_TYPE" == "targeted" ]] && EXTRA_USE+=" unconfined"
+    fi
+
     if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
         EXTRA_USE+=" modules-sign secureboot"
         if ! mountpoint -q /sys/firmware/efi/efivars; then
@@ -481,6 +508,12 @@ KEYWORDS
             ;;
     esac
 
+    # SELinux kernel USE flag
+    if [[ "${SELINUX:-n}" == "y" ]]; then
+        echo "sys-kernel/gentoo-kernel selinux" \
+            >> /etc/portage/package.use/kernel-hardened
+    fi
+
     # For musl-llvm-hardened, the stage3 is hardened+musl (GCC-based).
     # We need to emerge the LLVM toolchain before other packages.
     if [[ "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
@@ -522,6 +555,36 @@ KEYWORDPLY
     echo "[*] [CHROOT] shim and signed GRUB verified OK"
 
     # =========================================================================
+    # SELINUX PACKAGES
+    # =========================================================================
+    if [[ "${SELINUX:-n}" == "y" ]]; then
+        echo "[*] [CHROOT] Installing SELinux packages"
+        # Package USE flags for targeted policy
+        [[ "$SELINUX_TYPE" == "targeted" ]] && \
+            echo "sec-policy/selinux-base-policy unconfined" \
+                > /etc/portage/package.use/selinux-policy
+        # Core SELinux packages
+        emerge -N \
+            sys-libs/libselinux \
+            sys-apps/policycoreutils \
+            sys-apps/checkpolicy \
+            sec-policy/selinux-base \
+            sec-policy/selinux-base-policy \
+            sys-process/audit \
+            sec-policy/selinux-dbus \
+            sec-policy/selinux-networkmanager
+
+        # Write /etc/selinux/config (permissive for first boot, user switches later)
+        echo "[*] [CHROOT] Writing /etc/selinux/config"
+        mkdir -p /etc/selinux
+        cat > /etc/selinux/config <<SELINUXCONF
+# SELinux configuration
+SELINUX=permissive
+SELINUXTYPE=$SELINUX_TYPE
+SELINUXCONF
+    fi
+
+    # =========================================================================
     # LUKS / CRYPTTAB
     # =========================================================================
     if [[ "$LUKSED" == "y" ]]; then
@@ -537,6 +600,7 @@ KEYWORDPLY
     mkdir -p /etc/dracut.conf.d
     DRACUT_MODULES="btrfs plymouth"
     [[ "$LUKSED" == "y" ]] && DRACUT_MODULES+=" crypt"
+    [[ "${SELINUX:-n}" == "y" ]] && DRACUT_MODULES+=" selinux"
     cat > /etc/dracut.conf.d/gentoo.conf <<DRACUT
 hostonly="yes"
 add_dracutmodules+=" $DRACUT_MODULES "
@@ -584,6 +648,7 @@ TPM2CONF
     CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw splash mem_sleep_default=s2idle"
     [[ "$INIT_SYSTEM" == "openrc" ]] && CMDLINE_LINUX+=" rd.udev.log_priority=3 vt.global_cursor_default=0"
     [[ "$LUKSED" == "y" ]] && CMDLINE_LINUX+=" rd.luks.uuid=$LUKS_UUID rd.luks.name=$LUKS_UUID=root"
+    [[ "${SELINUX:-n}" == "y" ]] && CMDLINE_LINUX+=" security=selinux selinux=1"
     sed -i "s|^#*GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$CMDLINE_LINUX\"|" \
         /etc/default/grub
     sed -i 's/#GRUB_GFXPAYLOAD_LINUX=/GRUB_GFXPAYLOAD_LINUX=keep/' /etc/default/grub
@@ -759,6 +824,7 @@ HNCONF
         rc-update add NetworkManager default
         rc-update add elogind boot
         rc-update add cronie default
+        [[ "${SELINUX:-n}" == "y" ]] && rc-update add selinux_gentoo boot
         plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
         # plymouth-openrc-plugin handles Plymouth lifecycle automatically.
         # Disable interactive mode so OpenRC doesn't conflict with Plymouth.
@@ -979,6 +1045,76 @@ CLEVIS_BODY
     fi
 
     # =========================================================================
+    # SELINUX RELABELING SCRIPT (runs after first reboot)
+    # =========================================================================
+    if [[ "${SELINUX:-n}" == "y" ]]; then
+        echo "[*] [CHROOT] Creating SELinux relabeling script"
+        cat > /usr/local/sbin/gentoo-selinux-relabel.sh <<'SELINUXRELABEL'
+#!/usr/bin/env bash
+# =============================================================================
+# SELinux filesystem relabeling — run ONCE after first successful boot
+#
+# This script relabels the entire filesystem with correct SELinux contexts,
+# then provides instructions for switching to enforcing mode.
+# =============================================================================
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    echo "[!] Must run as root."
+    exit 1
+fi
+
+echo "[*] Checking SELinux status..."
+if ! command -v sestatus &>/dev/null; then
+    echo "[!] sestatus not found. SELinux tools not installed?"
+    exit 1
+fi
+
+sestatus
+
+CURRENT_MODE=$(getenforce)
+if [[ "$CURRENT_MODE" == "Disabled" ]]; then
+    echo "[!] SELinux is disabled. Boot with selinux=1 and security=selinux."
+    exit 1
+fi
+
+if [[ "$CURRENT_MODE" != "Permissive" ]]; then
+    echo "[!] SELinux is in $CURRENT_MODE mode. Switching to Permissive for relabeling."
+    setenforce 0
+fi
+
+echo ""
+echo "[*] Loading SELinux policy modules..."
+semodule -B || echo "[!] Warning: semodule -B returned non-zero. Continuing anyway."
+
+echo ""
+echo "[*] Relabeling entire filesystem. This may take several minutes..."
+rlpkg -a -r 2>/dev/null || restorecon -Rv / 2>/dev/null || {
+    echo "[!] Relabeling failed. Try manually: restorecon -Rv /"
+    exit 1
+}
+
+echo ""
+echo "[*] Relabeling complete."
+echo ""
+echo "[*] Next steps:"
+echo "    1. Reboot the system"
+echo "    2. After reboot, verify with: sestatus"
+echo "    3. If everything works, switch to enforcing mode:"
+echo "       sudo sed -i 's/^SELINUX=permissive/SELINUX=enforcing/' /etc/selinux/config"
+echo "    4. Reboot again to boot in enforcing mode"
+echo ""
+echo "    To temporarily test enforcing without editing config:"
+echo "       sudo setenforce 1"
+echo ""
+echo "    If enforcing mode causes problems, boot with enforcing=0"
+echo "    on the kernel command line to force permissive mode."
+SELINUXRELABEL
+        chmod +x /usr/local/sbin/gentoo-selinux-relabel.sh
+        echo "[*] [CHROOT] SELinux relabeling script created at /usr/local/sbin/gentoo-selinux-relabel.sh"
+    fi
+
+    # =========================================================================
     # USERS
     # =========================================================================
     echo "[*] [CHROOT] Setting up users"
@@ -1041,6 +1177,14 @@ GITCONF
         echo "[!] TPM2 unlock:"
         echo "    After first successful boot, run:"
         echo "      sudo /usr/local/sbin/gentoo-tpm-enroll.sh"
+        echo ""
+    fi
+    if [[ "${SELINUX:-n}" == "y" ]]; then
+        echo "[!] SELinux:"
+        echo "    System will boot in PERMISSIVE mode."
+        echo "    After first boot, relabel the filesystem:"
+        echo "      sudo /usr/local/sbin/gentoo-selinux-relabel.sh"
+        echo "    Then follow the instructions to switch to enforcing."
         echo ""
     fi
     echo "[*] grub-btrfs: install it post-reboot with:"
@@ -1244,4 +1388,6 @@ chroot /mnt/gentoo /usr/bin/env \
     USER_PASS="$USER_PASS" \
     GRUB_PASSWORD_ENABLE="${GRUB_PASSWORD_ENABLE:-n}" \
     GRUB_PASS="${GRUB_PASS:-}" \
+    SELINUX="${SELINUX:-n}" \
+    SELINUX_TYPE="${SELINUX_TYPE:-}" \
     /bin/bash /gentoo-install.sh --chroot
