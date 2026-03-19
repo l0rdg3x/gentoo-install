@@ -103,6 +103,8 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `MOK_PASS` | string | MOK enrollment password |
 | `GRUB_PASSWORD_ENABLE` | `y`/`n` | Protect GRUB menu with password |
 | `GRUB_PASS` | string | GRUB boot menu password (only set if `GRUB_PASSWORD_ENABLE=y`) |
+| `SELINUX` | `y`/`n` | Enable SELinux (only available with `hardened` variant) |
+| `SELINUX_TYPE` | `targeted`/`strict`/`mls` | SELinux policy type (only set if `SELINUX=y`) |
 | `ROOT_PASS` | string | Root account password |
 | `USER_NAME` | string | Non-root username |
 | `USER_PASS` | string | Non-root user password |
@@ -195,6 +197,29 @@ sudo /usr/local/sbin/gentoo-tpm-enroll.sh
 - **OpenRC**: Uses `clevis luks bind` with `tpm2` pin (PCR 7). Installs `clevis` and `tpm2-tools` from the GURU overlay.
 
 The LUKS passphrase always works as a fallback.
+
+---
+
+## SELinux
+
+SELinux is an optional feature available only with the `hardened` installation variant. It adds Mandatory Access Control (MAC) on top of the hardened profile's existing protections.
+
+- **Profile**: `default/linux/amd64/23.0/hardened/selinux[/systemd]` — a sub-profile of hardened
+- **Policy types**: `targeted` (recommended for desktop — only daemons confined), `strict` (all processes confined), `mls` (Multi-Level Security)
+- **USE flags**: `selinux` (global), `unconfined` (for targeted policy type)
+- **Kernel**: `sys-kernel/gentoo-kernel` with `selinux` USE flag; kernel cmdline includes `security=selinux selinux=1`
+- **Packages**: `sys-libs/libselinux`, `sys-apps/policycoreutils`, `sys-apps/checkpolicy`, `sec-policy/selinux-base`, `sec-policy/selinux-base-policy`, `sys-process/audit`, `sec-policy/selinux-dbus`, `sec-policy/selinux-networkmanager`
+- **Initial mode**: Always `permissive` — the system must boot permissive for first-boot relabeling
+- **OpenRC**: `selinux_gentoo` init script added to boot runlevel; systemd has native SELinux support
+- **Dracut**: `selinux` module included in initramfs
+
+SELinux **cannot** be fully configured in chroot (policies need a running SELinux-enabled kernel). The script generates `/usr/local/sbin/gentoo-selinux-relabel.sh` which the user runs after first boot:
+
+```bash
+sudo /usr/local/sbin/gentoo-selinux-relabel.sh
+```
+
+This relabels the filesystem, then instructs the user to switch from permissive to enforcing mode.
 
 ---
 
@@ -307,6 +332,8 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/usr/lib/kernel/install.d/91-sbctl.install` | Kernel install hook: auto-sign kernels via sbctl |
 | `/usr/local/sbin/update-grub` | Wrapper: grub-mkconfig → correct path |
 | `/usr/local/sbin/gentoo-tpm-enroll.sh` | TPM2 LUKS enrollment (run post-boot) |
+| `/etc/selinux/config` | SELinux mode and policy type (if SELinux enabled) |
+| `/usr/local/sbin/gentoo-selinux-relabel.sh` | SELinux filesystem relabeling (run post-boot) |
 
 ---
 
@@ -314,7 +341,8 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 
 1. **First reboot**: If Secure Boot enabled, MokManager will launch — enroll the MOK key with the password set during install, then reboot and enable Secure Boot in UEFI firmware settings.
 2. **TPM2 enrollment**: If TPM unlock enabled, run `sudo /usr/local/sbin/gentoo-tpm-enroll.sh` after first successful boot.
-3. **grub-btrfs**: Install and enable for Btrfs snapshot boot entries:
+3. **SELinux relabeling**: If SELinux enabled, run `sudo /usr/local/sbin/gentoo-selinux-relabel.sh` after first boot to relabel the filesystem, then switch to enforcing mode.
+4. **grub-btrfs**: Install and enable for Btrfs snapshot boot entries:
    ```bash
    emerge sys-boot/grub-btrfs
    # systemd:
@@ -322,8 +350,8 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
    # OpenRC:
    rc-update add grub-btrfsd default && rc-service grub-btrfsd start
    ```
-4. **System update**: `emerge --update --deep --newuse @world`
-5. **Networking**: `iw`, `wpa_supplicant`, `dhcpcd`, and `NetworkManager` are pre-installed.
+5. **System update**: `emerge --update --deep --newuse @world`
+6. **Networking**: `iw`, `wpa_supplicant`, `dhcpcd`, and `NetworkManager` are pre-installed.
 
 ---
 
