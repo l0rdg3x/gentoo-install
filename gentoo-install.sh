@@ -469,7 +469,8 @@ BINCONF
     # Install LLVM toolchain first using GCC, before make.conf CC=clang takes effect.
     if [[ "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
         echo "[*] [CHROOT] Installing LLVM toolchain for musl-llvm-hardened variant"
-        CC=gcc CXX=g++ emerge -N llvm-core/clang llvm-core/llvm llvm-core/lld
+        CC=gcc CXX=g++ AR=ar NM=nm RANLIB=ranlib \
+            emerge -N llvm-core/clang llvm-core/llvm llvm-core/lld
     fi
 
     echo "[*] [CHROOT] Detecting CPU flags"
