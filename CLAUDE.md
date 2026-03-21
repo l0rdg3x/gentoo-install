@@ -345,7 +345,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/etc/portage/binrepos.conf/gentoobinhost.conf` | Binary package repo |
 | `/etc/portage/package.use/*` | Per-package USE flags |
 | `/etc/portage/env/low-memory.conf` | MAKEOPTS=-j1 for heavy packages (LLVM variants only) |
-| `/etc/portage/env/fix-lld.conf` | low-memory + LD=ld.bfd for binutils (LLVM variants only) |
+| `/etc/portage/env/fix-lld.conf` | low-memory + LD=ld.bfd + LDFLAGS stripping for binutils (LLVM variants only) |
 | `/etc/portage/package.env` | Per-package env overrides (LLVM variants only) |
 | `/etc/portage/package.accept_keywords/pkgs` | `~amd64` keywords |
 | `/etc/portage/repos.conf/gentoo.conf` | Git-based Portage repo config |
