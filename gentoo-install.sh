@@ -406,13 +406,14 @@ if [[ "${1:-}" == "--chroot" ]]; then
             LC_MESSAGES_VAL="C.utf8" ;;
     esac
 
-    # Limit parallel emerge jobs to avoid OOM on systems with many cores but limited RAM.
-    # Each parallel package can spawn nproc compile threads, so --jobs must be conservative.
-    # Use ~1 job per 4 GiB of RAM (minimum 1, capped at nproc).
+    # Limit parallel emerge jobs to avoid OOM: each job spawns up to nproc compile
+    # threads, so --jobs should be well below nproc. Use min(RAM_GiB/4, nproc/2),
+    # minimum 1.  Examples:  4 threads/16GB → 2,  16 threads/64GB → 8,  8 threads/16GB → 4.
     _ram_gib=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)
-    EMERGE_JOBS=$(( _ram_gib / 4 ))
+    _jobs_by_ram=$(( _ram_gib / 4 ))
+    _jobs_by_cpu=$(( $(nproc) / 2 ))
+    EMERGE_JOBS=$(( _jobs_by_ram < _jobs_by_cpu ? _jobs_by_ram : _jobs_by_cpu ))
     [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
-    [[ $EMERGE_JOBS -gt $(nproc) ]] && EMERGE_JOBS=$(nproc)
 
     echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<MAKECONF
