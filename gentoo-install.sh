@@ -502,6 +502,16 @@ LLVMCONF
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
 LOWMEM
+            # Fix libtool -fuse-ld=lld infinite recursion: the LLVM profile sets
+            # LD="ld.lld" which libtool converts to -fuse-ld=lld. In recursive
+            # autotools builds (binutils), the flag accumulates at each recursion
+            # level, producing hundreds of duplicate flags → memory exhaustion.
+            # Override LD to the GNU linker for these packages.
+            cat > /etc/portage/env/fix-lld.conf <<'FIXLLD'
+MAKEOPTS="-j1 -l1"
+NINJAOPTS="-j1"
+LD="ld.bfd"
+FIXLLD
             cat > /etc/portage/package.env <<'PKGENV'
 # Heavy packages that cause OOM with clang at higher parallelism.
 # These get MAKEOPTS="-j1" and NINJAOPTS="-j1" via low-memory.conf.
@@ -510,13 +520,15 @@ llvm-core/clang low-memory.conf
 llvm-core/flang low-memory.conf
 llvm-core/lld low-memory.conf
 dev-lang/rust low-memory.conf
-sys-libs/binutils-libs low-memory.conf
-sys-devel/binutils low-memory.conf
 net-libs/webkit-gtk low-memory.conf
 dev-qt/qtwebengine low-memory.conf
 www-client/firefox low-memory.conf
 www-client/chromium low-memory.conf
 app-office/libreoffice low-memory.conf
+# binutils: use fix-lld.conf (includes low-memory + LD="ld.bfd") to prevent
+# libtool from accumulating -fuse-ld=lld recursively in autotools builds.
+sys-libs/binutils-libs fix-lld.conf
+sys-devel/binutils fix-lld.conf
 PKGENV
             ;;
     esac
