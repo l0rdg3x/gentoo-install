@@ -408,11 +408,11 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # Dynamic parallel emerge/make jobs based on RAM, swap and CPU threads.
     #
-    # LLVM variants: clang uses ~2 GiB per compile thread. Recursive make can
-    # amplify the actual process count beyond the -j value. Per-package overrides
-    # handle the heaviest packages (see below). -pipe is omitted from CFLAGS to
-    # reduce per-process memory (uses temp files instead of pipes between stages).
-    # EMERGE_JOBS forced to 1 — make -l does NOT coordinate across emerge jobs.
+    # LLVM variants: clang uses ~4 GiB per compile thread (conservative).
+    # 2 GiB reserved for OS/Portage overhead. Per-package overrides force -j1
+    # for the heaviest packages (LLVM, Rust, binutils, browsers). -pipe omitted
+    # from CFLAGS to reduce per-process memory. EMERGE_JOBS forced to 1 —
+    # make -l does NOT coordinate across emerge jobs.
     #
     # GCC variants: ~384 MiB per concurrent thread is sufficient.
     # Swap counted at 50% (slower than RAM). Full nproc for MAKEOPTS.
@@ -421,7 +421,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
         llvm|musl-llvm|musl-llvm-hardened)
             _ram_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
             EMERGE_JOBS=1
-            _make_j=$(( _ram_mib / 2048 ))
+            _make_j=$(( (_ram_mib - 2048) / 4096 ))
             [[ $_make_j -gt $_nproc ]] && _make_j=$_nproc
             [[ $_make_j -lt 1 ]] && _make_j=1
             _pipe_flag=""  # omit -pipe: trades speed for lower memory per clang process
@@ -476,14 +476,54 @@ MAKECONF
             echo "[*] [CHROOT] Configuring LLVM toolchain in make.conf"
             cat >> /etc/portage/make.conf <<'LLVMCONF'
 
-# LLVM/Clang toolchain
+# LLVM/Clang toolchain (matches profiles/features/llvm/make.defaults)
 CC="clang"
 CXX="clang++"
+CPP="clang-cpp"
+LD="ld.lld"
 AR="llvm-ar"
+AS="llvm-as"
 NM="llvm-nm"
+STRIP="llvm-strip"
 RANLIB="llvm-ranlib"
+OBJCOPY="llvm-objcopy"
+OBJDUMP="llvm-objdump"
+READELF="llvm-readelf"
+STRINGS="llvm-strings"
+ADDR2LINE="llvm-addr2line"
 
 LLVMCONF
+            ;;
+    esac
+
+    # Per-package MAKEOPTS/NINJAOPTS overrides for LLVM variants.
+    # MUST be created before any emerge call — heavy packages pulled as deps
+    # (e.g. binutils-libs via mirrorselect/cpuid2cpuflags) would otherwise
+    # compile with the global MAKEOPTS under clang, causing OOM.
+    case "$INSTALL_VARIANT" in
+        llvm|musl-llvm|musl-llvm-hardened)
+            echo "[*] [CHROOT] Setting per-package overrides for memory-heavy packages"
+            mkdir -p /etc/portage/env
+            cat > /etc/portage/env/low-memory.conf <<'LOWMEM'
+MAKEOPTS="-j1 -l1"
+NINJAOPTS="-j1"
+LOWMEM
+            cat > /etc/portage/package.env <<'PKGENV'
+# Heavy packages that cause OOM with clang at higher parallelism.
+# These get MAKEOPTS="-j1" and NINJAOPTS="-j1" via low-memory.conf.
+llvm-core/llvm low-memory.conf
+llvm-core/clang low-memory.conf
+llvm-core/flang low-memory.conf
+llvm-core/lld low-memory.conf
+dev-lang/rust low-memory.conf
+sys-libs/binutils-libs low-memory.conf
+sys-devel/binutils low-memory.conf
+net-libs/webkit-gtk low-memory.conf
+dev-qt/qtwebengine low-memory.conf
+www-client/firefox low-memory.conf
+www-client/chromium low-memory.conf
+app-office/libreoffice low-memory.conf
+PKGENV
             ;;
     esac
 
@@ -582,34 +622,6 @@ BINCONF
         > /etc/portage/package.use/grub
     echo "sys-apps/kmod pkcs7" \
         > /etc/portage/package.use/kmod
-
-    # Per-package MAKEOPTS overrides for LLVM variants.
-    # Heavy packages (LLVM, Rust, binutils, browsers) use excessive memory with
-    # clang due to recursive make amplification and LTO. Force -j1 for these.
-    case "$INSTALL_VARIANT" in
-        llvm|musl-llvm|musl-llvm-hardened)
-            echo "[*] [CHROOT] Setting per-package MAKEOPTS overrides for memory-heavy packages"
-            mkdir -p /etc/portage/env
-            cat > /etc/portage/env/low-memory.conf <<'LOWMEM'
-MAKEOPTS="-j1 -l1"
-LOWMEM
-            cat > /etc/portage/package.env <<'PKGENV'
-# Heavy packages that cause OOM with clang at higher parallelism
-llvm-core/llvm low-memory.conf
-llvm-core/clang low-memory.conf
-llvm-core/flang low-memory.conf
-llvm-core/lld low-memory.conf
-dev-lang/rust low-memory.conf
-sys-libs/binutils-libs low-memory.conf
-sys-devel/binutils low-memory.conf
-net-libs/webkit-gtk low-memory.conf
-dev-qt/qtwebengine low-memory.conf
-www-client/firefox low-memory.conf
-www-client/chromium low-memory.conf
-app-office/libreoffice low-memory.conf
-PKGENV
-            ;;
-    esac
 
     mkdir -p /etc/portage/package.accept_keywords/
     cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS

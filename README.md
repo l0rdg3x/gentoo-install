@@ -293,7 +293,7 @@ GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="<your selection>"
 ```
 
-`--jobs` and `MAKEOPTS` are calculated dynamically at install time. For GCC variants: `MAKEOPTS=-j$(nproc)`, emerge `--jobs (RAM+swap/2) / 384 MiB / nproc` (clamped `[1, nproc]`). For LLVM variants: `MAKEOPTS=-j(RAM/2GiB)` (clamped `[1, nproc]`), emerge `--jobs 1`, `-pipe` omitted from CFLAGS, and known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides forcing `-j1` to prevent OOM.
+`--jobs` and `MAKEOPTS` are calculated dynamically at install time. For GCC variants: `MAKEOPTS=-j$(nproc)`, emerge `--jobs (RAM+swap/2) / 384 MiB / nproc` (clamped `[1, nproc]`). For LLVM variants: `MAKEOPTS=-j((RAM-2GiB)/4GiB)` (clamped `[1, nproc]`), emerge `--jobs 1`, `-pipe` omitted from CFLAGS, full LLVM toolchain configured (14 variables matching the official Gentoo LLVM profile), and known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"` to prevent OOM.
 
 Best mirrors are auto-selected via `mirrorselect`. CPU flags are auto-detected via `cpuid2cpuflags`.
 

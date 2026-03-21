@@ -259,7 +259,7 @@ LC_MESSAGES=C.utf8
 
 ### Dynamic Parallel Emerge Jobs
 
-`EMERGE_JOBS` and `MAKEOPTS` are calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang uses ~1.5-2 GiB per compile thread (vs ~384 MiB for GCC).
+`EMERGE_JOBS` and `MAKEOPTS` are calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang uses ~4 GiB per compile thread (vs ~384 MiB for GCC).
 
 **Standard / hardened / musl variants (GCC):**
 ```
@@ -272,16 +272,18 @@ MAKEOPTS     = -j$(nproc) -l$(nproc)
 ```
 EMERGE_JOBS  = 1                       (always — parallel jobs cause OOM because
                                         make -l limits don't coordinate across jobs)
-MAKEOPTS     = -j(RAM / 2 GiB)        (clamped to [1, nproc])
+MAKEOPTS     = -j((RAM - 2 GiB) / 4 GiB)  (clamped to [1, nproc]; 2 GiB reserved for OS)
 CFLAGS       = -march=native -O2      (no -pipe — trades speed for lower memory)
 ```
 
-Additionally, known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `-j1`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones.
+Additionally, known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones. The overrides are created **immediately after make.conf** to ensure they are active for ALL emerge calls in the chroot.
 
-The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~2 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
+The LLVM toolchain is configured with all 14 variables matching the official Gentoo `profiles/features/llvm/make.defaults`: CC, CXX, CPP, LD, AR, AS, NM, STRIP, RANLIB, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE.
+
+The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
 Examples (GCC): 16GB/12t → `-j12`, 3 emerge jobs. 64GB/16t → `-j16`, 10 emerge jobs.
-Examples (LLVM): 16GB/4t → `-j4`, 1 emerge job (heavy pkgs: `-j1`). 4GB/4t → `-j2`, 1 emerge job.
+Examples (LLVM): 16GB/4t → `-j3`, 1 emerge job (heavy pkgs: `-j1`). 8GB/4t → `-j1`, 1 emerge job.
 
 ---
 
