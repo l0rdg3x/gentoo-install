@@ -161,7 +161,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
             musl)               _PROF_SUFFIX="musl" ;;
             musl-llvm)          _PROF_SUFFIX="musl/llvm" ;;
             musl-hardened)      _PROF_SUFFIX="musl/hardened" ;;
-            musl-llvm-hardened) _PROF_SUFFIX="musl/hardened" ;;  # base profile; LLVM added via make.conf
+            musl-llvm-hardened) _PROF_SUFFIX="musl/llvm" ;;  # base profile; hardened added via make.conf
         esac
         if [[ "$INIT_SYSTEM" == "systemd" ]]; then
             ESELECT_PROF="${_BASE}/${_PROF_SUFFIX}/systemd"
