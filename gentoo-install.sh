@@ -406,14 +406,16 @@ if [[ "${1:-}" == "--chroot" ]]; then
             LC_MESSAGES_VAL="C.utf8" ;;
     esac
 
-    # Limit parallel emerge jobs to avoid OOM: each job spawns up to nproc compile
-    # threads, so --jobs should be well below nproc. Use min(RAM_GiB/4, nproc/2),
-    # minimum 1.  Examples:  4 threads/16GB → 2,  16 threads/64GB → 8,  8 threads/16GB → 4.
-    _ram_gib=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)
-    _jobs_by_ram=$(( _ram_gib / 4 ))
-    _jobs_by_cpu=$(( $(nproc) / 2 ))
-    EMERGE_JOBS=$(( _jobs_by_ram < _jobs_by_cpu ? _jobs_by_ram : _jobs_by_cpu ))
+    # Dynamic parallel emerge jobs based on RAM, swap and CPU threads.
+    # Each emerge job spawns up to nproc compile threads (via MAKEOPTS).
+    # Budget ~384 MiB per concurrent thread; swap counted at 50% (slower than RAM).
+    # Formula: effective_mem / 384 / nproc, clamped to [1, nproc].
+    _nproc=$(nproc)
+    _eff_mib=$(awk '/MemTotal/{r=$2} /SwapTotal/{s=$2} END{printf "%d", (r + s/2) / 1024}' /proc/meminfo)
+    EMERGE_JOBS=$(( _eff_mib / 384 / _nproc ))
     [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
+    [[ $EMERGE_JOBS -gt $_nproc ]] && EMERGE_JOBS=$_nproc
+    echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective (RAM + swap/2), ${_nproc} threads → --jobs ${EMERGE_JOBS}"
 
     echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<MAKECONF
