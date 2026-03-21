@@ -244,8 +244,8 @@ FCFLAGS="${COMMON_FLAGS}"
 FFLAGS="${COMMON_FLAGS}"
 RUSTFLAGS="${RUSTFLAGS} -C target-cpu=native"
 
-MAKEOPTS="-j$(nproc) -l$(nproc)"
-EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average $(nproc)"
+MAKEOPTS="-j${_make_j} -l${_make_j}"      # _make_j = nproc (GCC) or RAM/2GiB (LLVM)
+EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average ${_make_j}"
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
 
 USE="dist-kernel systemd -elogind"     # systemd variant
@@ -259,22 +259,26 @@ LC_MESSAGES=C.utf8
 
 ### Dynamic Parallel Emerge Jobs
 
-`EMERGE_JOBS` is calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang compilation uses ~3x more memory per thread than GCC:
+`EMERGE_JOBS` and `MAKEOPTS` are calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang uses ~1.5-2 GiB per compile thread (vs ~384 MiB for GCC).
 
 **Standard / hardened / musl variants (GCC):**
 ```
 effective_mem = RAM + swap / 2         (swap counted at 50%, slower than RAM)
 EMERGE_JOBS  = effective_mem / 384 MiB / nproc   (clamped to [1, nproc])
+MAKEOPTS     = -j$(nproc) -l$(nproc)
 ```
 
 **LLVM variants (llvm, musl-llvm, musl-llvm-hardened):**
 ```
-effective_mem = RAM only               (swap NOT counted — swap thrashing with clang = freeze)
-EMERGE_JOBS  = effective_mem / 1024 MiB / nproc  (clamped to [1, nproc/2])
+EMERGE_JOBS  = 1                       (always — parallel jobs cause OOM because
+                                        make -l limits don't coordinate across jobs)
+MAKEOPTS     = -j(RAM / 2 GiB)        (clamped to [1, nproc])
 ```
 
-Examples (GCC): 16GB/12t → 3 jobs, 64GB/16t → 10 jobs, 4GB/4t → 2 jobs.
-Examples (LLVM): 16GB/4t → 2 jobs, 32GB/8t → 4 jobs, 64GB/16t → 4 jobs.
+The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~2 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
+
+Examples (GCC): 16GB/12t → `-j12`, 3 emerge jobs. 64GB/16t → `-j16`, 10 emerge jobs.
+Examples (LLVM): 16GB/4t → `-j4`, 1 emerge job. 4GB/4t → `-j2`, 1 emerge job.
 
 ---
 

@@ -406,28 +406,35 @@ if [[ "${1:-}" == "--chroot" ]]; then
             LC_MESSAGES_VAL="C.utf8" ;;
     esac
 
-    # Dynamic parallel emerge jobs based on RAM, swap and CPU threads.
-    # Each emerge job spawns up to nproc compile threads (via MAKEOPTS).
-    # LLVM variants use ~3x more memory per thread (clang is heavy), so they get
-    # a higher budget and don't count swap (swap thrashing = freeze).
+    # Dynamic parallel emerge/make jobs based on RAM, swap and CPU threads.
+    #
+    # LLVM variants: clang uses ~1.5-2 GiB per compile thread for heavy packages.
+    # Multiple parallel emerge jobs multiply this because make -l load limits do
+    # NOT coordinate across independent emerge jobs — causing OOM freezes.
+    # Fix: force EMERGE_JOBS=1 (one package at a time) and cap MAKEOPTS -j
+    # to RAM / 2 GiB so a single heavy package can't exhaust memory either.
+    #
+    # GCC variants: ~384 MiB per concurrent thread is sufficient.
+    # Swap counted at 50% (slower than RAM). Full nproc for MAKEOPTS.
     _nproc=$(nproc)
     case "$INSTALL_VARIANT" in
         llvm|musl-llvm|musl-llvm-hardened)
-            _mem_budget=1024   # ~1 GiB/thread — clang compilation is very memory-intensive
-            _eff_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
-            _max_jobs=$(( _nproc / 2 ))
-            [[ $_max_jobs -lt 1 ]] && _max_jobs=1
+            _ram_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
+            EMERGE_JOBS=1
+            _make_j=$(( _ram_mib / 2048 ))
+            [[ $_make_j -gt $_nproc ]] && _make_j=$_nproc
+            [[ $_make_j -lt 1 ]] && _make_j=1
+            echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs 1"
             ;;
         *)
-            _mem_budget=384    # ~384 MiB/thread — sufficient for GCC builds
             _eff_mib=$(awk '/MemTotal/{r=$2} /SwapTotal/{s=$2} END{printf "%d", (r + s/2) / 1024}' /proc/meminfo)
-            _max_jobs=$_nproc
+            EMERGE_JOBS=$(( _eff_mib / 384 / _nproc ))
+            [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
+            [[ $EMERGE_JOBS -gt $_nproc ]] && EMERGE_JOBS=$_nproc
+            _make_j=$_nproc
+            echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective, ${_nproc} threads → MAKEOPTS=-j${_make_j}, --jobs ${EMERGE_JOBS}"
             ;;
     esac
-    EMERGE_JOBS=$(( _eff_mib / _mem_budget / _nproc ))
-    [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
-    [[ $EMERGE_JOBS -gt $_max_jobs ]] && EMERGE_JOBS=$_max_jobs
-    echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective, ${_nproc} threads, budget ${_mem_budget} MiB/thread → --jobs ${EMERGE_JOBS}"
 
     echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<MAKECONF
@@ -442,9 +449,9 @@ FCFLAGS="\${COMMON_FLAGS}"
 FFLAGS="\${COMMON_FLAGS}"
 RUSTFLAGS="\${RUSTFLAGS} -C target-cpu=native"
 
-MAKEOPTS="-j$(nproc) -l$(nproc)"
+MAKEOPTS="-j${_make_j} -l${_make_j}"
 
-EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average $(nproc)"
+EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average ${_make_j}"
 
 FEATURES="\${FEATURES} candy parallel-fetch parallel-install"
 

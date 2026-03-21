@@ -293,7 +293,7 @@ GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="<your selection>"
 ```
 
-`--jobs` is calculated dynamically at install time based on variant and available resources. For GCC-based variants: `(RAM + swap/2) / 384 MiB / nproc`, clamped to `[1, nproc]`. For LLVM variants (clang is ~3x heavier): `RAM / 1024 MiB / nproc`, clamped to `[1, nproc/2]` — swap is not counted because swap thrashing with clang causes system freezes.
+`--jobs` and `MAKEOPTS` are calculated dynamically at install time. For GCC variants: `MAKEOPTS=-j$(nproc)`, emerge `--jobs (RAM+swap/2) / 384 MiB / nproc` (clamped `[1, nproc]`). For LLVM variants: `MAKEOPTS=-j(RAM/2GiB)` (clamped `[1, nproc]`), emerge `--jobs 1` — clang uses ~2 GiB per compile thread, and parallel emerge jobs cause uncoordinated OOM freezes.
 
 Best mirrors are auto-selected via `mirrorselect`. CPU flags are auto-detected via `cpuid2cpuflags`.
 
