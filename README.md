@@ -293,7 +293,7 @@ GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="<your selection>"
 ```
 
-`--jobs` is calculated dynamically at install time: `(RAM + swap/2) / 384 MiB / nproc`, clamped to `[1, nproc]`. This adapts parallel emerge jobs to the available RAM, swap, and CPU threads — avoiding OOM on low-memory systems while maximizing throughput on larger ones.
+`--jobs` is calculated dynamically at install time based on variant and available resources. For GCC-based variants: `(RAM + swap/2) / 384 MiB / nproc`, clamped to `[1, nproc]`. For LLVM variants (clang is ~3x heavier): `RAM / 1024 MiB / nproc`, clamped to `[1, nproc/2]` — swap is not counted because swap thrashing with clang causes system freezes.
 
 Best mirrors are auto-selected via `mirrorselect`. CPU flags are auto-detected via `cpuid2cpuflags`.
 

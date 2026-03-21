@@ -259,14 +259,22 @@ LC_MESSAGES=C.utf8
 
 ### Dynamic Parallel Emerge Jobs
 
-`EMERGE_JOBS` is calculated at install time based on available resources:
+`EMERGE_JOBS` is calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang compilation uses ~3x more memory per thread than GCC:
 
+**Standard / hardened / musl variants (GCC):**
 ```
 effective_mem = RAM + swap / 2         (swap counted at 50%, slower than RAM)
 EMERGE_JOBS  = effective_mem / 384 MiB / nproc   (clamped to [1, nproc])
 ```
 
-Each emerge job spawns up to `nproc` threads via `MAKEOPTS`, so the formula budgets ~384 MiB per concurrent thread. Examples: 16GB RAM / 12 threads → 3 jobs, 64GB / 16 threads → 10 jobs, 4GB / 4 threads → 2 jobs.
+**LLVM variants (llvm, musl-llvm, musl-llvm-hardened):**
+```
+effective_mem = RAM only               (swap NOT counted — swap thrashing with clang = freeze)
+EMERGE_JOBS  = effective_mem / 1024 MiB / nproc  (clamped to [1, nproc/2])
+```
+
+Examples (GCC): 16GB/12t → 3 jobs, 64GB/16t → 10 jobs, 4GB/4t → 2 jobs.
+Examples (LLVM): 16GB/4t → 2 jobs, 32GB/8t → 4 jobs, 64GB/16t → 4 jobs.
 
 ---
 

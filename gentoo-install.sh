@@ -408,14 +408,26 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # Dynamic parallel emerge jobs based on RAM, swap and CPU threads.
     # Each emerge job spawns up to nproc compile threads (via MAKEOPTS).
-    # Budget ~384 MiB per concurrent thread; swap counted at 50% (slower than RAM).
-    # Formula: effective_mem / 384 / nproc, clamped to [1, nproc].
+    # LLVM variants use ~3x more memory per thread (clang is heavy), so they get
+    # a higher budget and don't count swap (swap thrashing = freeze).
     _nproc=$(nproc)
-    _eff_mib=$(awk '/MemTotal/{r=$2} /SwapTotal/{s=$2} END{printf "%d", (r + s/2) / 1024}' /proc/meminfo)
-    EMERGE_JOBS=$(( _eff_mib / 384 / _nproc ))
+    case "$INSTALL_VARIANT" in
+        llvm|musl-llvm|musl-llvm-hardened)
+            _mem_budget=1024   # ~1 GiB/thread — clang compilation is very memory-intensive
+            _eff_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
+            _max_jobs=$(( _nproc / 2 ))
+            [[ $_max_jobs -lt 1 ]] && _max_jobs=1
+            ;;
+        *)
+            _mem_budget=384    # ~384 MiB/thread — sufficient for GCC builds
+            _eff_mib=$(awk '/MemTotal/{r=$2} /SwapTotal/{s=$2} END{printf "%d", (r + s/2) / 1024}' /proc/meminfo)
+            _max_jobs=$_nproc
+            ;;
+    esac
+    EMERGE_JOBS=$(( _eff_mib / _mem_budget / _nproc ))
     [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
-    [[ $EMERGE_JOBS -gt $_nproc ]] && EMERGE_JOBS=$_nproc
-    echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective (RAM + swap/2), ${_nproc} threads → --jobs ${EMERGE_JOBS}"
+    [[ $EMERGE_JOBS -gt $_max_jobs ]] && EMERGE_JOBS=$_max_jobs
+    echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective, ${_nproc} threads, budget ${_mem_budget} MiB/thread → --jobs ${EMERGE_JOBS}"
 
     echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<MAKECONF
