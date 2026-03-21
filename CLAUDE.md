@@ -278,7 +278,7 @@ CFLAGS       = -march=native -O2      (no -pipe — trades speed for lower memor
 
 Additionally, known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones. The overrides are created **immediately after make.conf** to ensure they are active for ALL emerge calls in the chroot.
 
-The LLVM toolchain is configured with all 14 variables matching the official Gentoo `profiles/features/llvm/make.defaults`: CC, CXX, CPP, LD, AR, AS, NM, STRIP, RANLIB, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE.
+The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile`. Setting `LD="ld.lld"` in make.conf causes libtool to accumulate `-fuse-ld=lld` recursively in autotools packages (e.g. binutils-libs), so it must NOT be set there.
 
 The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
