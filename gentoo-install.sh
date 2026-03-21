@@ -252,7 +252,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     # ---- SELinux ----
-    if [[ "$INSTALL_VARIANT" == "hardened" || "$INSTALL_VARIANT" == "musl-hardened" || "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
+    if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
         ask_yesno SELINUX "SELinux" \
             "Enable SELinux (Security-Enhanced Linux)?\n\nProvides mandatory access control (MAC).\nThe system will boot in PERMISSIVE mode initially.\nYou must relabel and switch to enforcing after first boot." "n"
         if [[ "$SELINUX" == "y" ]]; then
@@ -851,7 +851,7 @@ HNCONF
     echo "[*] [CHROOT] Installing additional packages"
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
         emerge -N \
-            sys-apps/mlocate \
+            sys-apps/plocate \
             net-misc/chrony \
             net-wireless/iw \
             net-wireless/wpa_supplicant \
@@ -860,7 +860,7 @@ HNCONF
             net-misc/networkmanager
     else
         emerge -N \
-            sys-apps/mlocate \
+            sys-apps/plocate \
             net-misc/chrony \
             net-wireless/iw \
             net-wireless/wpa_supplicant \
