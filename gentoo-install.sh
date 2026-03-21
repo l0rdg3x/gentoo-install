@@ -334,15 +334,17 @@ if [[ "${1:-}" == "--chroot" ]]; then
     echo "[*] [CHROOT] Setting profile: $ESELECT_PROF"
     eselect profile set "$ESELECT_PROF"
 
-    # LLVM variants: ensure gcc/g++ symlinks exist for packages with hardcoded gcc.
-    # On Gentoo, clang lives in /usr/lib/llvm/XX/bin/ and is added to PATH via
-    # eselect — so we must resolve the actual path for the symlinks.
+    # LLVM variants: create gcc/g++ wrappers that delegate to clang.
+    # Some packages hardcode "gcc" in their Makefiles. On Gentoo, clang lives in
+    # /usr/lib/llvm/XX/bin/ and the versioned path changes on updates, so we use
+    # wrapper scripts that resolve clang via PATH at runtime.
     case "$INSTALL_VARIANT" in
         llvm|musl-llvm|musl-llvm-hardened)
             if ! command -v gcc &>/dev/null && command -v clang &>/dev/null; then
-                echo "[*] [CHROOT] Creating gcc/g++ symlinks to clang (LLVM variant)"
-                ln -sf "$(command -v clang)" /usr/bin/gcc
-                ln -sf "$(command -v clang++)" /usr/bin/g++
+                echo "[*] [CHROOT] Creating gcc/g++ wrappers for clang (LLVM variant)"
+                printf '#!/bin/sh\nexec clang "$@"\n' > /usr/local/bin/gcc
+                printf '#!/bin/sh\nexec clang++ "$@"\n' > /usr/local/bin/g++
+                chmod +x /usr/local/bin/gcc /usr/local/bin/g++
             fi
             ;;
     esac
