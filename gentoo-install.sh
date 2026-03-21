@@ -465,14 +465,6 @@ BINCONF
             /etc/portage/make.conf
     fi
 
-    # For musl-llvm-hardened, the stage3 is musl-hardened (GCC-based).
-    # Install LLVM toolchain first using GCC, before make.conf CC=clang takes effect.
-    if [[ "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
-        echo "[*] [CHROOT] Installing LLVM toolchain for musl-llvm-hardened variant"
-        CC=gcc CXX=g++ AR=ar NM=nm RANLIB=ranlib \
-            emerge -N llvm-core/clang llvm-core/llvm llvm-core/lld
-    fi
-
     echo "[*] [CHROOT] Detecting CPU flags"
     emerge --oneshot app-portage/cpuid2cpuflags
     echo "*/* $(cpuid2cpuflags)" > /etc/portage/package.use/00cpu-flags
@@ -1343,7 +1335,7 @@ case "$INSTALL_VARIANT" in
     musl)               STAGE3_VARIANT="musl" ;;
     musl-llvm)          STAGE3_VARIANT="musl-llvm" ;;
     musl-hardened)      STAGE3_VARIANT="musl-hardened" ;;
-    musl-llvm-hardened) STAGE3_VARIANT="musl-hardened" ;;  # no separate stage3; LLVM added via make.conf
+    musl-llvm-hardened) STAGE3_VARIANT="musl-llvm" ;;  # use musl-llvm stage3; hardened applied via profile + make.conf
 esac
 LATEST=$(curl -sS "$MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt") || {
     echo "[!] Failed to fetch stage3 metadata from $MIRROR/latest-stage3-amd64-${STAGE3_VARIANT}.txt"
