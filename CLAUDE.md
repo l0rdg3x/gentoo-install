@@ -272,13 +272,13 @@ MAKEOPTS     = -j$(nproc) -l$(nproc)
 ```
 EMERGE_JOBS  = 1                       (always — parallel jobs cause OOM because
                                         make -l limits don't coordinate across jobs)
-MAKEOPTS     = -j(RAM / 2 GiB)        (clamped to [1, nproc])
+MAKEOPTS     = -j(RAM / 8 GiB)        (clamped to [1, nproc])
 ```
 
-The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~2 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
+The key insight: `make -jN` with recursive makefiles (e.g. binutils) spawns **far more** than N clang processes — typically 7-8x. So `-j4` produces ~30 clang processes. The 8 GiB budget per `-j` thread accounts for this amplification, build artifacts in `/var/tmp`, and lld linker memory spikes.
 
 Examples (GCC): 16GB/12t → `-j12`, 3 emerge jobs. 64GB/16t → `-j16`, 10 emerge jobs.
-Examples (LLVM): 16GB/4t → `-j4`, 1 emerge job. 4GB/4t → `-j2`, 1 emerge job.
+Examples (LLVM): 16GB/4t → `-j2`, 1 emerge job. 32GB/8t → `-j4`, 1 emerge job. 64GB/16t → `-j8`, 1 emerge job.
 
 ---
 

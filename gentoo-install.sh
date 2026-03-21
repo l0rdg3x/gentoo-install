@@ -408,11 +408,11 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # Dynamic parallel emerge/make jobs based on RAM, swap and CPU threads.
     #
-    # LLVM variants: clang uses ~1.5-2 GiB per compile thread for heavy packages.
-    # Multiple parallel emerge jobs multiply this because make -l load limits do
-    # NOT coordinate across independent emerge jobs — causing OOM freezes.
-    # Fix: force EMERGE_JOBS=1 (one package at a time) and cap MAKEOPTS -j
-    # to RAM / 2 GiB so a single heavy package can't exhaust memory either.
+    # LLVM variants: clang is extremely memory-hungry. A single `make -jN`
+    # spawns far more than N clang processes due to recursive make (e.g.
+    # binutils-libs with -j4 spawns 30+ clang processes). Budget 8 GiB per
+    # -j thread to account for this amplification, build artifacts, and lld
+    # linker memory. EMERGE_JOBS forced to 1 (no parallel packages).
     #
     # GCC variants: ~384 MiB per concurrent thread is sufficient.
     # Swap counted at 50% (slower than RAM). Full nproc for MAKEOPTS.
@@ -421,7 +421,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
         llvm|musl-llvm|musl-llvm-hardened)
             _ram_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
             EMERGE_JOBS=1
-            _make_j=$(( _ram_mib / 2048 ))
+            _make_j=$(( _ram_mib / 8192 ))
             [[ $_make_j -gt $_nproc ]] && _make_j=$_nproc
             [[ $_make_j -lt 1 ]] && _make_j=1
             echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs 1"
