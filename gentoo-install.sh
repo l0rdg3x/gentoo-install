@@ -87,17 +87,13 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "Timezone  (search: ls -l /usr/share/zoneinfo)" \
         "Europe/Rome"
 
-    ask_input LOCALE_GEN_SET "Localization" \
-        'Entries for /etc/locale.gen (separate multiple with \n)\nExample: it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8' \
-        'it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8'
-
-    ask_input ESELECT_LOCALE_SET "Localization" \
-        "eselect locale target — UTF8 without the dash\nExample: it_IT.UTF-8  ->  it_IT.UTF8" \
-        "it_IT.UTF8"
-
     ask_input CONSOLE_KEYMAP "Localization" \
         "Console keymap  (e.g. it, us, de):" \
         "it"
+
+    # Locale-gen questions are asked after variant selection (musl has no locale-gen)
+    LOCALE_GEN_SET=""
+    ESELECT_LOCALE_SET=""
 
     # ---- Installation Variant ----
     ask_radio INSTALL_VARIANT "Installation Variant" \
@@ -109,6 +105,35 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "musl-llvm"          "Musl + LLVM (musl + Clang/LLVM)"             "off" \
         "musl-hardened"      "Musl + Hardened (musl + GCC + hardened)"     "off" \
         "musl-llvm-hardened" "Musl + LLVM + Hardened (experimental combo)" "off"
+
+    # ---- musl + systemd guard ----
+    # musl variants only support OpenRC (systemd requires glibc)
+    case "$INSTALL_VARIANT" in
+        musl|musl-llvm|musl-hardened|musl-llvm-hardened)
+            if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+                dialog --clear --title "Init System Override" \
+                    --msgbox "The '$INSTALL_VARIANT' variant does not support systemd (requires glibc).\n\nSwitching to OpenRC automatically." \
+                    9 62
+                INIT_SYSTEM="openrc"
+            fi
+            ;;
+    esac
+
+    # ---- Locale (glibc only — musl has no locale-gen) ----
+    case "$INSTALL_VARIANT" in
+        musl|musl-llvm|musl-hardened|musl-llvm-hardened)
+            # musl uses UTF-8 natively; locale-gen does not exist
+            ;;
+        *)
+            ask_input LOCALE_GEN_SET "Localization" \
+                'Entries for /etc/locale.gen (separate multiple with \n)\nExample: it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8' \
+                'it_IT ISO-8859-1\nit_IT.UTF-8 UTF-8'
+
+            ask_input ESELECT_LOCALE_SET "Localization" \
+                "eselect locale target — UTF8 without the dash\nExample: it_IT.UTF-8  ->  it_IT.UTF8" \
+                "it_IT.UTF8"
+            ;;
+    esac
 
     # ---- Profile ----
     if [[ "$INSTALL_VARIANT" == "standard" ]]; then
@@ -136,7 +161,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
             musl)               _PROF_SUFFIX="musl" ;;
             musl-llvm)          _PROF_SUFFIX="musl/llvm" ;;
             musl-hardened)      _PROF_SUFFIX="musl/hardened" ;;
-            musl-llvm-hardened) _PROF_SUFFIX="musl/hardened" ;;  # base profile; LLVM added via make.conf
+            musl-llvm-hardened) _PROF_SUFFIX="musl/llvm" ;;  # base profile; hardened added via make.conf
         esac
         if [[ "$INIT_SYSTEM" == "systemd" ]]; then
             ESELECT_PROF="${_BASE}/${_PROF_SUFFIX}/systemd"
@@ -227,7 +252,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     # ---- SELinux ----
-    if [[ "$INSTALL_VARIANT" == "hardened" || "$INSTALL_VARIANT" == "musl-hardened" || "$INSTALL_VARIANT" == "musl-llvm-hardened" ]]; then
+    if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
         ask_yesno SELINUX "SELinux" \
             "Enable SELinux (Security-Enhanced Linux)?\n\nProvides mandatory access control (MAC).\nThe system will boot in PERMISSIVE mode initially.\nYou must relabel and switch to enforcing after first boot." "n"
         if [[ "$SELINUX" == "y" ]]; then
@@ -265,7 +290,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Init system     : $INIT_SYSTEM
   Variant         : $INSTALL_VARIANT
   Timezone        : $TIMEZONE_SET
-  Locale          : $ESELECT_LOCALE_SET
+  Locale          : ${ESELECT_LOCALE_SET:-"(musl — not applicable)"}
   Profile         : $ESELECT_PROF
 
   Disk            : $DISK_INSTALL  ($DEV_INSTALL)
@@ -363,9 +388,22 @@ if [[ "${1:-}" == "--chroot" ]]; then
     # ---- Determine variant-specific make.conf values ----
     HARDENED_CFLAGS=""
     case "$INSTALL_VARIANT" in
-        hardened|musl-hardened|musl-llvm-hardened)
+        hardened)
             HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
             ;;
+        musl-hardened|musl-llvm-hardened)
+            # musl does not implement glibc's __*_chk wrappers, so
+            # _FORTIFY_SOURCE has no effect — only use -fstack-protector-strong
+            HARDENED_CFLAGS=" -fstack-protector-strong"
+            ;;
+    esac
+
+    # C.utf8 locale is provided by glibc; musl only supports C/POSIX
+    case "$INSTALL_VARIANT" in
+        musl|musl-llvm|musl-hardened|musl-llvm-hardened)
+            LC_MESSAGES_VAL="C" ;;
+        *)
+            LC_MESSAGES_VAL="C.utf8" ;;
     esac
 
     echo "[*] [CHROOT] Writing make.conf"
@@ -396,7 +434,7 @@ GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="$VIDEOCARDS"
 
 # Build output in English (required for bug reports)
-LC_MESSAGES=C.utf8
+LC_MESSAGES=$LC_MESSAGES_VAL
 
 MAKECONF
 
@@ -813,7 +851,7 @@ HNCONF
     echo "[*] [CHROOT] Installing additional packages"
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
         emerge -N \
-            sys-apps/mlocate \
+            sys-apps/plocate \
             net-misc/chrony \
             net-wireless/iw \
             net-wireless/wpa_supplicant \
@@ -822,7 +860,7 @@ HNCONF
             net-misc/networkmanager
     else
         emerge -N \
-            sys-apps/mlocate \
+            sys-apps/plocate \
             net-misc/chrony \
             net-wireless/iw \
             net-wireless/wpa_supplicant \
