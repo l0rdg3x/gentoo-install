@@ -334,6 +334,19 @@ if [[ "${1:-}" == "--chroot" ]]; then
     echo "[*] [CHROOT] Setting profile: $ESELECT_PROF"
     eselect profile set "$ESELECT_PROF"
 
+    # LLVM variants: ensure gcc/g++ symlinks exist for packages with hardcoded gcc
+    # The musl-llvm stage3 has these via alternatives, but switching to a non-LLVM
+    # profile (e.g. musl/hardened) may lose them.
+    case "$INSTALL_VARIANT" in
+        llvm|musl-llvm|musl-llvm-hardened)
+            if ! command -v gcc &>/dev/null && command -v clang &>/dev/null; then
+                echo "[*] [CHROOT] Creating gcc/g++ symlinks to clang (LLVM variant)"
+                ln -sf clang /usr/bin/gcc
+                ln -sf clang++ /usr/bin/g++
+            fi
+            ;;
+    esac
+
     emerge --oneshot app-portage/mirrorselect
 
     # ---- Determine init-specific USE flag ----
