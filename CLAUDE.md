@@ -14,7 +14,7 @@ This is a single-file Bash script (`gentoo-install.sh`) that automates Gentoo Li
 
 ```
 gentoo-install/
-├── gentoo-install.sh   # The entire installer (~1150 lines, single script)
+├── gentoo-install.sh   # The entire installer (~1470 lines, single script)
 ├── README.md           # User-facing documentation
 └── LICENSE             # GPLv3
 ```
@@ -27,7 +27,7 @@ There is no build system, no test suite, no CI/CD, and no separate config files.
 
 The script has **four logical sections**, controlled by a `--chroot` argument guard:
 
-### Section 1: Dialog Config Wizard (lines 14–245)
+### Section 1: Dialog Config Wizard (lines 14–343)
 Runs on the **live host** (no `--chroot` flag). Uses the `dialog` TUI to collect all installation parameters interactively, then exports them as environment variables.
 
 Four helper functions drive all dialogs:
@@ -36,16 +36,16 @@ Four helper functions drive all dialogs:
 - `ask_yesno VAR "Title" "Prompt" default_y_or_n` — yes/no dialog
 - `ask_radio VAR "Title" "Prompt" tag item on|off ...` — single-choice radiolist
 
-### Section 1b: Pre-Installation Checks (lines 971–1017)
+### Section 1b: Pre-Installation Checks (lines 1277–1324)
 Runs on the **live host** after the dialog wizard confirms. Validates root privileges, UEFI boot mode, target disk existence, disk not mounted, required tools availability, and network/mirror connectivity before any destructive operation. Critical failures exit immediately; warnings (swap size, hostname format) are printed but do not block installation.
 
-### Section 2: Chroot Section (lines 250–969)
+### Section 2: Chroot Section (lines 345–1275)
 Runs **inside the chroot** (triggered by `--chroot` flag). Configures the new Gentoo system: Portage, profile, make.conf, packages, bootloader, users, and post-install scripts.
 
-### Section 3: Host (Pre-Chroot) Section (lines 1022–1148)
+### Section 3: Host (Pre-Chroot) Section (lines 1325–1472)
 Runs on the **live host** after pre-installation checks pass. Handles disk operations: wipe, GPT partitioning, optional LUKS formatting, Btrfs formatting and subvolume creation, swap file setup, stage3 download/extraction, and chroot entry.
 
-**Note**: The script copies itself from `/root/gentoo-install.sh` into the chroot (line 1116), not from the current directory.
+**Note**: The script copies itself from `/root/gentoo-install.sh` into the chroot (line 1437), not from the current directory.
 
 ---
 
@@ -80,6 +80,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 |---|---|---|
 | `HOSTNAME` | string | System hostname |
 | `INIT_SYSTEM` | `systemd`/`openrc` | Init system to install |
+| `INSTALL_VARIANT` | string | `standard`/`llvm`/`hardened`/`musl`/`musl-llvm`/`musl-hardened`/`musl-llvm-hardened` |
 | `TIMEZONE_SET` | string | e.g. `Europe/Rome` |
 | `LOCALE_GEN_SET` | string | `/etc/locale.gen` entries (newline-separated via `\n`) |
 | `ESELECT_LOCALE_SET` | string | e.g. `it_IT.UTF8` (no dash) |
@@ -244,7 +245,7 @@ FFLAGS="${COMMON_FLAGS}"
 RUSTFLAGS="${RUSTFLAGS} -C target-cpu=native"
 
 MAKEOPTS="-j$(nproc) -l$(nproc)"
-EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
+EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average $(nproc)"
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
 
 USE="dist-kernel systemd -elogind"     # systemd variant
@@ -255,6 +256,17 @@ GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="$VIDEOCARDS"
 LC_MESSAGES=C.utf8
 ```
+
+### Dynamic Parallel Emerge Jobs
+
+`EMERGE_JOBS` is calculated at install time based on available resources:
+
+```
+effective_mem = RAM + swap / 2         (swap counted at 50%, slower than RAM)
+EMERGE_JOBS  = effective_mem / 384 MiB / nproc   (clamped to [1, nproc])
+```
+
+Each emerge job spawns up to `nproc` threads via `MAKEOPTS`, so the formula budgets ~384 MiB per concurrent thread. Examples: 16GB RAM / 12 threads → 3 jobs, 64GB / 16 threads → 10 jobs, 4GB / 4 threads → 2 jobs.
 
 ---
 
@@ -367,7 +379,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 ## Development Notes
 
 - The script is intentionally monolithic — resist splitting it unless there is a strong reason. The single-file design is a deliberate choice for portability during live-CD installation.
-- The chroot hand-off passes every variable explicitly via `/usr/bin/env VAR=value ...` on the `chroot` command line. If you add a new configuration variable, add it to both the `export` block (lines 239–244) and the `chroot` invocation (lines 1119–1148).
+- The chroot hand-off passes every variable explicitly via `/usr/bin/env VAR=value ...` on the `chroot` command line. If you add a new configuration variable, add it to both the `export` block (lines 337–342) and the `chroot` invocation (lines 1440–1472).
 - `grub-install` must NOT be used — it produces an unsigned binary incompatible with the shim-based Secure Boot chain.
 - TPM2 enrollment scripts that use `systemd-cryptenroll` cannot run during chroot because PCR values are not valid until a real boot occurs.
 - When writing config files with heredocs that contain bash variables from the install context, use `<<DELIMITER` (unquoted). When writing scripts that should be literal bash on the installed system, use `<<'DELIMITER'` (quoted).
