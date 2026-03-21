@@ -408,11 +408,11 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # Dynamic parallel emerge/make jobs based on RAM, swap and CPU threads.
     #
-    # LLVM variants: clang is extremely memory-hungry. A single `make -jN`
-    # spawns far more than N clang processes due to recursive make (e.g.
-    # binutils-libs with -j4 spawns 30+ clang processes). Budget 8 GiB per
-    # -j thread to account for this amplification, build artifacts, and lld
-    # linker memory. EMERGE_JOBS forced to 1 (no parallel packages).
+    # LLVM variants: clang uses ~2 GiB per compile thread. Recursive make can
+    # amplify the actual process count beyond the -j value. Per-package overrides
+    # handle the heaviest packages (see below). -pipe is omitted from CFLAGS to
+    # reduce per-process memory (uses temp files instead of pipes between stages).
+    # EMERGE_JOBS forced to 1 — make -l does NOT coordinate across emerge jobs.
     #
     # GCC variants: ~384 MiB per concurrent thread is sufficient.
     # Swap counted at 50% (slower than RAM). Full nproc for MAKEOPTS.
@@ -421,9 +421,10 @@ if [[ "${1:-}" == "--chroot" ]]; then
         llvm|musl-llvm|musl-llvm-hardened)
             _ram_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
             EMERGE_JOBS=1
-            _make_j=$(( _ram_mib / 8192 ))
+            _make_j=$(( _ram_mib / 2048 ))
             [[ $_make_j -gt $_nproc ]] && _make_j=$_nproc
             [[ $_make_j -lt 1 ]] && _make_j=1
+            _pipe_flag=""  # omit -pipe: trades speed for lower memory per clang process
             echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs 1"
             ;;
         *)
@@ -432,6 +433,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
             [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
             [[ $EMERGE_JOBS -gt $_nproc ]] && EMERGE_JOBS=$_nproc
             _make_j=$_nproc
+            _pipe_flag=" -pipe"
             echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective, ${_nproc} threads → MAKEOPTS=-j${_make_j}, --jobs ${EMERGE_JOBS}"
             ;;
     esac
@@ -442,7 +444,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
 # = GENTOO MAKE.CONF =
 # ====================
 
-COMMON_FLAGS="-march=native -O2 -pipe${HARDENED_CFLAGS}"
+COMMON_FLAGS="-march=native -O2${_pipe_flag}${HARDENED_CFLAGS}"
 CFLAGS="\${COMMON_FLAGS}"
 CXXFLAGS="\${COMMON_FLAGS}"
 FCFLAGS="\${COMMON_FLAGS}"
@@ -580,6 +582,34 @@ BINCONF
         > /etc/portage/package.use/grub
     echo "sys-apps/kmod pkcs7" \
         > /etc/portage/package.use/kmod
+
+    # Per-package MAKEOPTS overrides for LLVM variants.
+    # Heavy packages (LLVM, Rust, binutils, browsers) use excessive memory with
+    # clang due to recursive make amplification and LTO. Force -j1 for these.
+    case "$INSTALL_VARIANT" in
+        llvm|musl-llvm|musl-llvm-hardened)
+            echo "[*] [CHROOT] Setting per-package MAKEOPTS overrides for memory-heavy packages"
+            mkdir -p /etc/portage/env
+            cat > /etc/portage/env/low-memory.conf <<'LOWMEM'
+MAKEOPTS="-j1 -l1"
+LOWMEM
+            cat > /etc/portage/package.env <<'PKGENV'
+# Heavy packages that cause OOM with clang at higher parallelism
+llvm-core/llvm low-memory.conf
+llvm-core/clang low-memory.conf
+llvm-core/flang low-memory.conf
+llvm-core/lld low-memory.conf
+dev-lang/rust low-memory.conf
+sys-libs/binutils-libs low-memory.conf
+sys-devel/binutils low-memory.conf
+net-libs/webkit-gtk low-memory.conf
+dev-qt/qtwebengine low-memory.conf
+www-client/firefox low-memory.conf
+www-client/chromium low-memory.conf
+app-office/libreoffice low-memory.conf
+PKGENV
+            ;;
+    esac
 
     mkdir -p /etc/portage/package.accept_keywords/
     cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
