@@ -237,7 +237,7 @@ This relabels the filesystem, then instructs the user to switch from permissive 
 ### make.conf Defaults
 
 ```
-COMMON_FLAGS="-march=native -O2 -pipe"
+COMMON_FLAGS="-march=native -O2 -pipe"        # GCC variants (-pipe omitted for LLVM)
 CFLAGS="${COMMON_FLAGS}"
 CXXFLAGS="${COMMON_FLAGS}"
 FCFLAGS="${COMMON_FLAGS}"
@@ -273,12 +273,15 @@ MAKEOPTS     = -j$(nproc) -l$(nproc)
 EMERGE_JOBS  = 1                       (always — parallel jobs cause OOM because
                                         make -l limits don't coordinate across jobs)
 MAKEOPTS     = -j(RAM / 2 GiB)        (clamped to [1, nproc])
+CFLAGS       = -march=native -O2      (no -pipe — trades speed for lower memory)
 ```
+
+Additionally, known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `-j1`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones.
 
 The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~2 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
 Examples (GCC): 16GB/12t → `-j12`, 3 emerge jobs. 64GB/16t → `-j16`, 10 emerge jobs.
-Examples (LLVM): 16GB/4t → `-j4`, 1 emerge job. 4GB/4t → `-j2`, 1 emerge job.
+Examples (LLVM): 16GB/4t → `-j4`, 1 emerge job (heavy pkgs: `-j1`). 4GB/4t → `-j2`, 1 emerge job.
 
 ---
 
@@ -339,6 +342,8 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/etc/portage/make.conf` | Portage build configuration |
 | `/etc/portage/binrepos.conf/gentoobinhost.conf` | Binary package repo |
 | `/etc/portage/package.use/*` | Per-package USE flags |
+| `/etc/portage/env/low-memory.conf` | MAKEOPTS=-j1 for heavy packages (LLVM variants only) |
+| `/etc/portage/package.env` | Per-package env overrides (LLVM variants only) |
 | `/etc/portage/package.accept_keywords/pkgs` | `~amd64` keywords |
 | `/etc/portage/repos.conf/gentoo.conf` | Git-based Portage repo config |
 | `/etc/dracut.conf.d/gentoo.conf` | Initramfs config (hostonly, modules) |
