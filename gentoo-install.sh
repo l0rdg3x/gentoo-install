@@ -476,21 +476,15 @@ MAKECONF
             echo "[*] [CHROOT] Configuring LLVM toolchain in make.conf"
             cat >> /etc/portage/make.conf <<'LLVMCONF'
 
-# LLVM/Clang toolchain (matches profiles/features/llvm/make.defaults)
+# LLVM/Clang toolchain — only CC/CXX and safe binutils replacements.
+# LD, AS, CPP, STRIP, etc. are set by the LLVM profile via eselect.
+# Setting LD="ld.lld" in make.conf causes libtool to accumulate
+# -fuse-ld=lld recursively in autotools packages (binutils-libs).
 CC="clang"
 CXX="clang++"
-CPP="clang-cpp"
-LD="ld.lld"
 AR="llvm-ar"
-AS="llvm-as"
 NM="llvm-nm"
-STRIP="llvm-strip"
 RANLIB="llvm-ranlib"
-OBJCOPY="llvm-objcopy"
-OBJDUMP="llvm-objdump"
-READELF="llvm-readelf"
-STRINGS="llvm-strings"
-ADDR2LINE="llvm-addr2line"
 
 LLVMCONF
             ;;
