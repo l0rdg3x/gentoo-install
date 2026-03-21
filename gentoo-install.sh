@@ -406,6 +406,14 @@ if [[ "${1:-}" == "--chroot" ]]; then
             LC_MESSAGES_VAL="C.utf8" ;;
     esac
 
+    # Limit parallel emerge jobs to avoid OOM on systems with many cores but limited RAM.
+    # Each parallel package can spawn nproc compile threads, so --jobs must be conservative.
+    # Use ~1 job per 4 GiB of RAM (minimum 1, capped at nproc).
+    _ram_gib=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)
+    EMERGE_JOBS=$(( _ram_gib / 4 ))
+    [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
+    [[ $EMERGE_JOBS -gt $(nproc) ]] && EMERGE_JOBS=$(nproc)
+
     echo "[*] [CHROOT] Writing make.conf"
     cat > /etc/portage/make.conf <<MAKECONF
 # ====================
@@ -421,7 +429,7 @@ RUSTFLAGS="\${RUSTFLAGS} -C target-cpu=native"
 
 MAKEOPTS="-j$(nproc) -l$(nproc)"
 
-EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
+EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average $(nproc)"
 
 FEATURES="\${FEATURES} candy parallel-fetch parallel-install"
 
