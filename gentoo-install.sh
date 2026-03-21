@@ -486,9 +486,14 @@ BINCONF
 
     echo "[*] [CHROOT] Setting localization"
     ln -sf ../usr/share/zoneinfo/"$TIMEZONE_SET" /etc/localtime
-    printf "en_US.UTF-8 UTF-8\n%b\n" "$LOCALE_GEN_SET" > /etc/locale.gen
-    locale-gen
-    eselect locale set "$ESELECT_LOCALE_SET"
+    # musl does not use glibc locales — locale-gen and eselect locale are unavailable
+    if command -v locale-gen &>/dev/null; then
+        printf "en_US.UTF-8 UTF-8\n%b\n" "$LOCALE_GEN_SET" > /etc/locale.gen
+        locale-gen
+        eselect locale set "$ESELECT_LOCALE_SET"
+    else
+        echo "[!] [CHROOT] Skipping locale-gen (musl libc — locales not supported)"
+    fi
     env-update && source /etc/profile
 
     echo "[*] [CHROOT] Writing package.use"
