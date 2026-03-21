@@ -285,13 +285,15 @@ The generated `/etc/portage/make.conf` includes:
 ```
 COMMON_FLAGS="-march=native -O2 -pipe [-fstack-protector-strong -D_FORTIFY_SOURCE=2]"
 MAKEOPTS="-j$(nproc) -l$(nproc)"
-EMERGE_DEFAULT_OPTS="--jobs $(nproc) --load-average $(nproc)"
+EMERGE_DEFAULT_OPTS="--jobs <dynamic> --load-average $(nproc)"
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
 USE="dist-kernel systemd|elogind [hardened pie ssp] [selinux unconfined] [modules-sign secureboot]"
 ACCEPT_LICENSE="*"
 GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="<your selection>"
 ```
+
+`--jobs` is calculated dynamically at install time: `(RAM + swap/2) / 384 MiB / nproc`, clamped to `[1, nproc]`. This adapts parallel emerge jobs to the available RAM, swap, and CPU threads — avoiding OOM on low-memory systems while maximizing throughput on larger ones.
 
 Best mirrors are auto-selected via `mirrorselect`. CPU flags are auto-detected via `cpuid2cpuflags`.
 
