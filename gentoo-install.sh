@@ -84,9 +84,9 @@ if [[ "${1:-}" != "--chroot" ]]; then
 
     # ---- Installation Type ----
     ask_radio INSTALL_TYPE "Installation Type" \
-        "Select the installation type:" \
-        "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools)" "on"  \
-        "server"  "Server   (minimal — no splash, no Wi-Fi tools)" "off"
+        "Select the installation type:\n(For minimal/base profiles, choose Server)" \
+        "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools — desktop profiles only)" "on"  \
+        "server"  "Server   (no splash, no Wi-Fi tools — all profiles available)"       "off"
 
     # ---- Kernel channel ----
     _kernel_default=$([[ "$INSTALL_TYPE" == "desktop" ]] && echo "y" || echo "n")
@@ -164,15 +164,13 @@ if [[ "${1:-}" != "--chroot" ]]; then
                 "Select a Portage profile:" \
                 "default/linux/amd64/23.0/desktop/plasma/systemd" "KDE Plasma / systemd"      "on"  \
                 "default/linux/amd64/23.0/desktop/gnome/systemd"  "GNOME / systemd"           "off" \
-                "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off" \
-                "default/linux/amd64/23.0/systemd"                "Minimal / systemd"         "off"
+                "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off"
         else
             ask_radio ESELECT_PROF "Portage Profile" \
                 "Select a Portage profile:" \
                 "default/linux/amd64/23.0/desktop/plasma" "KDE Plasma / OpenRC"      "on"  \
                 "default/linux/amd64/23.0/desktop/gnome"  "GNOME / OpenRC"           "off" \
-                "default/linux/amd64/23.0/desktop"        "Desktop (no DE) / OpenRC" "off" \
-                "default/linux/amd64/23.0"                "Minimal / OpenRC"         "off"
+                "default/linux/amd64/23.0/desktop"        "Desktop (no DE) / OpenRC" "off"
         fi
     else
         # Non-standard variants: profile assigned automatically (no desktop variants exist)
