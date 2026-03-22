@@ -84,9 +84,9 @@ if [[ "${1:-}" != "--chroot" ]]; then
 
     # ---- Installation Type ----
     ask_radio INSTALL_TYPE "Installation Type" \
-        "Select the installation type:" \
-        "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools)" "on"  \
-        "server"  "Server   (minimal — no splash, no Wi-Fi tools)" "off"
+        "Select the installation type:\n(For minimal/base profiles, choose Server)" \
+        "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools — desktop profiles only)" "on"  \
+        "server"  "Server   (no splash, no Wi-Fi tools — all profiles available)"       "off"
 
     # ---- Kernel channel ----
     _kernel_default=$([[ "$INSTALL_TYPE" == "desktop" ]] && echo "y" || echo "n")
