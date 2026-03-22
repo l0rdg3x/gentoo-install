@@ -108,8 +108,6 @@ After confirmation, the script runs unattended through two phases:
 When the script finishes:
 
 ```bash
-exit
-swapoff /mnt/gentoo/swap/swap.img
 umount -R /mnt/gentoo
 reboot
 ```
