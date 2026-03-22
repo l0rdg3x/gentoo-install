@@ -502,25 +502,29 @@ LLVMCONF
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
 LOWMEM
-            # binutils/binutils-libs cannot be built with clang+lld: the LLVM profile
-            # injects "-fuse-ld=lld -rtlib=compiler-rt" into LDFLAGS, which libtool
-            # duplicates at each level of binutils' recursive autotools build → hundreds
-            # of copies → enormous command line → OOM. Stripping LDFLAGS flags in a
-            # Portage env file is unreliable; the community-standard fix is to build
-            # binutils with GCC (the stage3 bootstrap compiler) instead of clang.
-            cat > /etc/portage/env/compiler-gcc.conf <<'COMPILERGCC'
-CC="gcc"
-CXX="g++"
-LD="ld.bfd"
-AR="ar"
-NM="nm"
-RANLIB="ranlib"
+            # The Gentoo LLVM profile sets LD="ld.lld" in its make.defaults.
+            # Autotools/libtool detects LD=ld.lld and translates it into a
+            # -fuse-ld=lld compiler flag, then re-passes it at every level of
+            # binutils' recursive sub-makes. Each recursion appends another copy
+            # → hundreds of -fuse-ld=lld flags → command-line overflow → OOM.
+            #
+            # Fix: unset LD and hard-override LDFLAGS for binutils/binutils-libs.
+            # With LD unset, libtool does not generate -fuse-ld=lld.
+            # Clang compiled with default-lld still uses lld internally via its
+            # built-in default — no explicit -fuse-ld flag is needed.
+            # The clang-common package may inject -fuse-ld=lld into LDFLAGS via
+            # /etc/env.d; hard-overriding LDFLAGS removes that too.
+            cat > /etc/portage/env/fix-binutils.conf <<'FIXBINUTILS'
+# Prevent libtool from generating -fuse-ld=lld in recursive autotools builds.
+# The LLVM profile's LD="ld.lld" causes libtool to add -fuse-ld=lld to every
+# link command; unsetting LD breaks the accumulation loop.
+unset LD
+# Hard-override LDFLAGS: remove any -fuse-ld=lld/-rtlib=compiler-rt injected
+# by clang-common's env.d files. Standard linker opts only.
+LDFLAGS="-Wl,-O1 -Wl,--as-needed"
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
-CFLAGS="-march=native -O2 -pipe"
-CXXFLAGS="-march=native -O2 -pipe"
-LDFLAGS="-Wl,-O1 -Wl,--as-needed"
-COMPILERGCC
+FIXBINUTILS
             cat > /etc/portage/package.env <<'PKGENV'
 # Heavy packages that cause OOM with clang at higher parallelism.
 # These get MAKEOPTS="-j1" and NINJAOPTS="-j1" via low-memory.conf.
@@ -534,10 +538,9 @@ dev-qt/qtwebengine low-memory.conf
 www-client/firefox low-memory.conf
 www-client/chromium low-memory.conf
 app-office/libreoffice low-memory.conf
-# binutils: use GCC fallback to avoid libtool -fuse-ld=lld recursion in
-# recursive autotools builds. GCC+ld.bfd never injects -fuse-ld=lld.
-sys-libs/binutils-libs compiler-gcc.conf
-sys-devel/binutils compiler-gcc.conf
+# binutils: unset LD to stop libtool -fuse-ld=lld recursion (see fix-binutils.conf)
+sys-libs/binutils-libs fix-binutils.conf
+sys-devel/binutils fix-binutils.conf
 PKGENV
             ;;
     esac
