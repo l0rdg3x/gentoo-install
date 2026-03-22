@@ -409,9 +409,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
     # Dynamic parallel emerge/make jobs based on RAM, swap and CPU threads.
     #
     # LLVM variants: clang uses ~4 GiB per compile thread (conservative).
-    # 2 GiB reserved for OS/Portage overhead. Per-package overrides force -j1
-    # for the heaviest packages (LLVM, Rust, binutils, browsers). -pipe omitted
-    # from CFLAGS to reduce per-process memory. EMERGE_JOBS forced to 1 —
+    # 2 GiB reserved for OS/Portage overhead. EMERGE_JOBS forced to 1 —
     # make -l does NOT coordinate across emerge jobs.
     #
     # GCC variants: ~384 MiB per concurrent thread is sufficient.
@@ -424,8 +422,9 @@ if [[ "${1:-}" == "--chroot" ]]; then
             _make_j=$(( (_ram_mib - 2048) / 4096 ))
             [[ $_make_j -gt $_nproc ]] && _make_j=$_nproc
             [[ $_make_j -lt 1 ]] && _make_j=1
-            _pipe_flag=""  # omit -pipe: trades speed for lower memory per clang process
-            echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs 1"
+            _pipe_flag=" -pipe"
+            _lto_flag=" -flto=thin"
+            echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs 1, ThinLTO"
             ;;
         *)
             _eff_mib=$(awk '/MemTotal/{r=$2} /SwapTotal/{s=$2} END{printf "%d", (r + s/2) / 1024}' /proc/meminfo)
@@ -434,7 +433,8 @@ if [[ "${1:-}" == "--chroot" ]]; then
             [[ $EMERGE_JOBS -gt $_nproc ]] && EMERGE_JOBS=$_nproc
             _make_j=$_nproc
             _pipe_flag=" -pipe"
-            echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective, ${_nproc} threads → MAKEOPTS=-j${_make_j}, --jobs ${EMERGE_JOBS}"
+            _lto_flag=" -flto"
+            echo "[*] [CHROOT] Resources: ${_eff_mib} MiB effective, ${_nproc} threads → MAKEOPTS=-j${_make_j}, --jobs ${EMERGE_JOBS}, LTO"
             ;;
     esac
 
@@ -444,7 +444,7 @@ if [[ "${1:-}" == "--chroot" ]]; then
 # = GENTOO MAKE.CONF =
 # ====================
 
-COMMON_FLAGS="-march=native -O2${_pipe_flag}${HARDENED_CFLAGS}"
+COMMON_FLAGS="-march=native -O2${_pipe_flag}${HARDENED_CFLAGS}${_lto_flag}"
 CFLAGS="\${COMMON_FLAGS}"
 CXXFLAGS="\${COMMON_FLAGS}"
 FCFLAGS="\${COMMON_FLAGS}"
@@ -454,6 +454,8 @@ RUSTFLAGS="\${RUSTFLAGS} -C target-cpu=native"
 MAKEOPTS="-j${_make_j} -l${_make_j}"
 
 EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average ${_make_j}"
+
+LDFLAGS="\${LDFLAGS}${_lto_flag}"
 
 FEATURES="\${FEATURES} candy parallel-fetch parallel-install"
 
@@ -470,7 +472,7 @@ LC_MESSAGES=$LC_MESSAGES_VAL
 
 MAKECONF
 
-    # LLVM toolchain configuration
+    # Toolchain-specific configuration appended to make.conf
     case "$INSTALL_VARIANT" in
         llvm|musl-llvm|musl-llvm-hardened)
             echo "[*] [CHROOT] Configuring LLVM toolchain in make.conf"
@@ -486,33 +488,23 @@ RANLIB="llvm-ranlib"
 
 LLVMCONF
             ;;
+        *)
+            # GCC LTO requires wrapper tools that expose the LTO plugin to binutils.
+            # Without these, ld cannot read the LLVM/GCC IR objects at link time.
+            echo "[*] [CHROOT] Configuring GCC LTO tools in make.conf"
+            cat >> /etc/portage/make.conf <<'GCCLTOCONF'
+
+# GCC LTO tools — exposes the GCC LTO plugin to binutils at link time.
+AR="gcc-ar"
+NM="gcc-nm"
+RANLIB="gcc-ranlib"
+
+GCCLTOCONF
+            ;;
     esac
 
-    # Per-package MAKEOPTS/NINJAOPTS overrides for LLVM variants.
-    # MUST be created before any emerge call — heavy packages pulled as deps
-    # would otherwise compile with the global MAKEOPTS under clang, causing OOM.
     case "$INSTALL_VARIANT" in
         llvm|musl-llvm|musl-llvm-hardened)
-            echo "[*] [CHROOT] Setting per-package overrides for memory-heavy packages"
-            mkdir -p /etc/portage/env
-            cat > /etc/portage/env/low-memory.conf <<'LOWMEM'
-MAKEOPTS="-j1 -l1"
-NINJAOPTS="-j1"
-LOWMEM
-            cat > /etc/portage/package.env <<'PKGENV'
-# Heavy packages that cause OOM with clang at higher parallelism.
-# These get MAKEOPTS="-j1" and NINJAOPTS="-j1" via low-memory.conf.
-llvm-core/llvm low-memory.conf
-llvm-core/clang low-memory.conf
-llvm-core/flang low-memory.conf
-llvm-core/lld low-memory.conf
-dev-lang/rust low-memory.conf
-net-libs/webkit-gtk low-memory.conf
-dev-qt/qtwebengine low-memory.conf
-www-client/firefox low-memory.conf
-www-client/chromium low-memory.conf
-app-office/libreoffice low-memory.conf
-PKGENV
             # Bug #965718: sys-libs/binutils-libs-2.45-r1 OOMs during configure
             # with LLVM 21 ("checking whether compiler driver understands Ada and
             # is recent enough"). Accept ~amd64 for all LLVM packages to get
