@@ -503,24 +503,20 @@ MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
 LOWMEM
             # The Gentoo LLVM profile sets LD="ld.lld" in its make.defaults.
-            # Autotools/libtool detects LD=ld.lld and translates it into a
-            # -fuse-ld=lld compiler flag, then re-passes it at every level of
-            # binutils' recursive sub-makes. Each recursion appends another copy
-            # → hundreds of -fuse-ld=lld flags → command-line overflow → OOM.
+            # Autotools/libtool detects this and generates "-fuse-ld=lld" in link
+            # commands. clang-common with default-lld may also inject it via env.d.
+            # For binutils/binutils-libs (deep recursive autotools), this causes OOM
+            # from accumulated flags and parallel lld instances.
             #
-            # Fix: unset LD and hard-override LDFLAGS for binutils/binutils-libs.
-            # With LD unset, libtool does not generate -fuse-ld=lld.
-            # Clang compiled with default-lld still uses lld internally via its
-            # built-in default — no explicit -fuse-ld flag is needed.
-            # The clang-common package may inject -fuse-ld=lld into LDFLAGS via
-            # /etc/env.d; hard-overriding LDFLAGS removes that too.
+            # Fix: hard-override LDFLAGS (full replacement, NOT appending to ${LDFLAGS}
+            # which would preserve accumulated flags) and force MAKEOPTS="-j1".
+            # Note: Portage env files do not support shell builtins (unset, export, etc.)
+            # — only VAR=VALUE assignments are valid.
             cat > /etc/portage/env/fix-binutils.conf <<'FIXBINUTILS'
-# Prevent libtool from generating -fuse-ld=lld in recursive autotools builds.
-# The LLVM profile's LD="ld.lld" causes libtool to add -fuse-ld=lld to every
-# link command; unsetting LD breaks the accumulation loop.
-unset LD
-# Hard-override LDFLAGS: remove any -fuse-ld=lld/-rtlib=compiler-rt injected
-# by clang-common's env.d files. Standard linker opts only.
+# Hard-override LDFLAGS for binutils/binutils-libs: full replacement prevents
+# any -fuse-ld=lld accumulation from clang-common env.d or libtool recursion.
+# Clang compiled with default-lld still uses lld internally via its built-in
+# default — no explicit -fuse-ld flag is needed in LDFLAGS.
 LDFLAGS="-Wl,-O1 -Wl,--as-needed"
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
@@ -538,7 +534,7 @@ dev-qt/qtwebengine low-memory.conf
 www-client/firefox low-memory.conf
 www-client/chromium low-memory.conf
 app-office/libreoffice low-memory.conf
-# binutils: unset LD to stop libtool -fuse-ld=lld recursion (see fix-binutils.conf)
+# binutils: hard-override LDFLAGS + MAKEOPTS=-j1 to prevent lld OOM (see fix-binutils.conf)
 sys-libs/binutils-libs fix-binutils.conf
 sys-devel/binutils fix-binutils.conf
 PKGENV
