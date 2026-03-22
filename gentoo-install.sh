@@ -59,12 +59,14 @@ if [[ "${1:-}" != "--chroot" ]]; then
         fi
     }
 
-    # ask_radio VAR "Title" "Prompt" tag1 item1 on|off  tag2 item2 on|off ...
+    # ask_radio VAR "Title" "Prompt" [width] tag1 item1 on|off  tag2 item2 on|off ...
+    # width is optional: if the 4th argument is a number it is used as dialog width (default 72)
     ask_radio() {
-        local _var="$1" _title="$2" _prompt="$3"
+        local _var="$1" _title="$2" _prompt="$3" _width=72
         shift 3
+        if [[ "$1" =~ ^[0-9]+$ ]]; then _width="$1"; shift; fi
         dialog --clear --title "$_title" \
-               --radiolist "$_prompt" 20 72 10 "$@" 2>"$TMP"
+               --radiolist "$_prompt" 20 "$_width" 10 "$@" 2>"$TMP"
         printf -v "$_var" '%s' "$(cat "$TMP")"
     }
 
@@ -83,7 +85,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "openrc"  "OpenRC   (traditional init)" "off"
 
     # ---- Installation Type ----
-    ask_radio INSTALL_TYPE "Installation Type" \
+    ask_radio INSTALL_TYPE "Installation Type" 90 \
         "Select the installation type:\n(For minimal/base profiles, choose Server)" \
         "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools — desktop profiles only)" "on"  \
         "server"  "Server   (no splash, no Wi-Fi tools — all profiles available)"       "off"
@@ -237,13 +239,24 @@ if [[ "${1:-}" != "--chroot" ]]; then
         TPM_UNLOCK="n"
     fi
 
-    # ---- Hardware ----
-    _vc_hint="Examples:  intel   /   amdgpu radeonsi   /   nvidia"
-    [[ "$INSTALL_TYPE" == "server" ]] && \
-        _vc_hint="$_vc_hint\n(Server without dedicated GPU: use 'fbdev')"
-    ask_input VIDEOCARDS "Hardware" \
-        "VIDEO_CARDS value for make.conf\n$_vc_hint" \
-        "intel"
+    # ---- Hardware / Video ----
+    if [[ "$INSTALL_TYPE" == "desktop" ]]; then
+        ask_radio VIDEOCARDS "Hardware — GPU" \
+            "Select the GPU driver (VIDEO_CARDS):" \
+            "intel"                 "Intel            (integrated graphics, i915)"          "on"  \
+            "amdgpu radeonsi"       "AMD              (discrete/APU, GCN4+ — amdgpu+radeonsi)" "off" \
+            "nvidia"                "nVidia           (proprietary driver)"                 "off" \
+            "intel amdgpu radeonsi" "Intel + AMD      (hybrid laptop)"                     "off" \
+            "nouveau"               "nVidia           (nouveau open-source driver)"         "off"
+    else
+        ask_radio VIDEOCARDS "Hardware — GPU" \
+            "Select the GPU driver (VIDEO_CARDS):" \
+            "fbdev"           "fbdev            (framebuffer, no accel — headless/VM)"  "on"  \
+            "ast"             "AST              (Aspeed BMC — server iKVM graphics)"    "off" \
+            "vesa"            "VESA             (legacy VGA, minimal)"                  "off" \
+            "intel"           "Intel            (integrated graphics, i915)"            "off" \
+            "amdgpu radeonsi" "AMD              (discrete/APU, GCN4+)"                 "off"
+    fi
 
     ask_yesno INTEL_CPU_MICROCODE "Hardware" \
         "Install Intel CPU microcode  (sys-firmware/intel-microcode)?" "y"
