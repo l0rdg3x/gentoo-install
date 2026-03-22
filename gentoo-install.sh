@@ -535,29 +535,6 @@ GCCLTOCONF
             ;;
     esac
 
-    case "$INSTALL_VARIANT" in
-        llvm|musl-llvm|musl-llvm-hardened)
-            # Bug #965718: sys-libs/binutils-libs-2.45-r1 OOMs during configure
-            # with LLVM 21 ("checking whether compiler driver understands Ada and
-            # is recent enough"). Accept ~amd64 for all LLVM packages to get
-            # LLVM 22+, then upgrade the toolchain immediately so that any
-            # subsequent emerge (including binutils-libs pulled as a dep) runs
-            # the Ada check against the fixed compiler.
-            mkdir -p /etc/portage/package.accept_keywords
-            cat > /etc/portage/package.accept_keywords/llvm-testing <<'LLVMKEYWORDS'
-# Accept ~amd64 for LLVM 22+ to work around Gentoo bug #965718:
-# binutils-libs-2.45 OOMs during configure with LLVM 21 (Ada compiler check).
-llvm-core/* ~amd64
-llvm-runtimes/* ~amd64
-LLVMKEYWORDS
-            echo "[*] [CHROOT] Upgrading LLVM toolchain (workaround for Gentoo bug #965718)"
-            emerge -uN \
-                llvm-core/llvm \
-                llvm-core/clang \
-                llvm-core/lld
-            ;;
-    esac
-
     echo "[*] [CHROOT] Selecting best mirrors"
     BEST_MIRROR=$(mirrorselect -s3 -b10 -S -D -o)
     echo "$BEST_MIRROR" >> /etc/portage/make.conf
