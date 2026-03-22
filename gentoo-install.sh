@@ -814,9 +814,10 @@ TPM2CONF
     [[ "$LUKSED" == "y" ]] && CMDLINE_LINUX+=" rd.luks.uuid=$LUKS_UUID rd.luks.name=$LUKS_UUID=root"
     [[ "${SELINUX:-n}" == "y" ]] && CMDLINE_LINUX+=" security=selinux selinux=1"
 
-    # Write cmdline for dracut: it reads /etc/kernel/cmdline when running inside a chroot
+    # Write cmdline for dracut: it reads /etc/cmdline.d/ when running inside a chroot
     # (where /proc/cmdline is the host's cmdline and unusable).
-    echo "$CMDLINE_LINUX" > /etc/kernel/cmdline
+    mkdir -p /etc/cmdline.d
+    echo "$CMDLINE_LINUX" > /etc/cmdline.d/gentoo.conf
 
     sed -i "s|^#*GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$CMDLINE_LINUX\"|" \
         /etc/default/grub
