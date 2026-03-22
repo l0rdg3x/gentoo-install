@@ -293,14 +293,16 @@ CFLAGS       = -march=native -O2 -pipe -flto=thin
 Examples (GCC): 16GB/8t → `-j8`, 8 emerge jobs. 8GB/4t → `-j4`, 4 emerge jobs.
 Examples (LLVM): 8GB/4t → slots=3, 1 job × `-j3`. 16GB/8t → slots=7, 1 job × `-j7`. 32GB/16t → slots=15, 1 job × `-j15`. 256GB/32t → slots=127, 3 jobs × `-j32`.
 
-### LLVM Toolchain Upgrade (Gentoo bug #965718)
+### Known Issue: LLVM variants and sys-libs/binutils-libs (Gentoo bug #965718)
 
-For LLVM variants, immediately after `make.conf` is written, the script:
+`sys-libs/binutils-libs-2.45-r1` OOMs during configure with any LLVM version tested so far
+(`checking whether compiler driver understands Ada and is recent enough`). Upgrading to LLVM 22+
+does **not** fix the issue. **LLVM variants are currently broken** for any installation that pulls
+in binutils-libs as a dependency. This is an upstream Gentoo bug; track it at:
+https://bugs.gentoo.org/965718
 
-1. Creates `/etc/portage/package.accept_keywords/llvm-testing` accepting `~amd64` for `llvm-core/*` and `llvm-runtimes/*`
-2. Runs `emerge -uN llvm-core/llvm llvm-core/clang llvm-core/lld` to upgrade to LLVM 22+
-
-**Reason**: `sys-libs/binutils-libs-2.45-r1` OOMs during configure with LLVM 21 (`checking whether compiler driver understands Ada and is recent enough`). LLVM 22+ fixes the Ada check. This emerge runs before any other package installation so that binutils-libs, if pulled as a dependency, sees the fixed compiler.
+The previous workaround (creating `llvm-testing` keywords and pre-upgrading the LLVM toolchain)
+has been removed since LLVM 22 does not resolve the OOM.
 
 ---
 
@@ -362,7 +364,6 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/etc/portage/binrepos.conf/gentoobinhost.conf` | Binary package repo |
 | `/etc/portage/package.use/*` | Per-package USE flags |
 | `/etc/portage/package.accept_keywords/pkgs` | `~amd64` keywords |
-| `/etc/portage/package.accept_keywords/llvm-testing` | `llvm-core/* ~amd64` — LLVM 22+ workaround for bug #965718 (LLVM variants only) |
 | `/etc/portage/repos.conf/gentoo.conf` | Git-based Portage repo config |
 | `/etc/dracut.conf.d/gentoo.conf` | Initramfs config (hostonly, modules) |
 | `/etc/dracut.conf.d/tpm2.conf` | TPM2 kernel drivers in initramfs |
@@ -406,6 +407,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 
 - AMD64 / x86_64 only (no ARM64)
 - TPM2 auto-unlock uses `systemd-cryptenroll` (systemd) or `clevis` (OpenRC)
+- **LLVM variants are currently broken**: `sys-libs/binutils-libs-2.45-r1` OOMs during configure with any tested LLVM version (Gentoo bug #965718). Do not use llvm/musl-llvm/musl-llvm-hardened variants until upstream fixes this.
 - Defaults lean toward Italian locale (`Europe/Rome`, `it_IT`, `it` keymap) — change interactively at wizard prompts
 
 ---
