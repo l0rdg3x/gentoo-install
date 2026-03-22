@@ -79,8 +79,14 @@ if [[ "${1:-}" != "--chroot" ]]; then
     # ---- Init System ----
     ask_radio INIT_SYSTEM "Init System" \
         "Select the init system:" \
-        "systemd" "systemd  (recommended for desktop)" "on"  \
-        "openrc"  "OpenRC   (traditional init)"         "off"
+        "systemd" "systemd  (recommended)" "on"  \
+        "openrc"  "OpenRC   (traditional init)" "off"
+
+    # ---- Installation Type ----
+    ask_radio INSTALL_TYPE "Installation Type" \
+        "Select the installation type:" \
+        "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools)" "on"  \
+        "server"  "Server   (minimal — no splash, no Wi-Fi tools, stable kernel)" "off"
 
     # ---- Localization ----
     ask_input TIMEZONE_SET "Localization" \
@@ -137,7 +143,17 @@ if [[ "${1:-}" != "--chroot" ]]; then
 
     # ---- Profile ----
     if [[ "$INSTALL_VARIANT" == "standard" ]]; then
-        if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        if [[ "$INSTALL_TYPE" == "server" ]]; then
+            # Server: base profiles only (no desktop/plasma/gnome)
+            if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+                ask_radio ESELECT_PROF "Portage Profile" \
+                    "Select a Portage profile:" \
+                    "default/linux/amd64/23.0/systemd" "Base / systemd  (recommended for server)" "on"  \
+                    "default/linux/amd64/23.0"          "Minimal (no systemd USE flags)"           "off"
+            else
+                ESELECT_PROF="default/linux/amd64/23.0"
+            fi
+        elif [[ "$INIT_SYSTEM" == "systemd" ]]; then
             ask_radio ESELECT_PROF "Portage Profile" \
                 "Select a Portage profile:" \
                 "default/linux/amd64/23.0/desktop/plasma/systemd" "KDE Plasma / systemd"      "on"  \
@@ -218,20 +234,27 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     # ---- Hardware ----
+    _vc_hint="Examples:  intel   /   amdgpu radeonsi   /   nvidia"
+    [[ "$INSTALL_TYPE" == "server" ]] && \
+        _vc_hint="$_vc_hint\n(Server without dedicated GPU: use 'fbdev')"
     ask_input VIDEOCARDS "Hardware" \
-        "VIDEO_CARDS value for make.conf\nExamples:  intel   /   amdgpu radeonsi   /   nvidia" \
+        "VIDEO_CARDS value for make.conf\n$_vc_hint" \
         "intel"
 
     ask_yesno INTEL_CPU_MICROCODE "Hardware" \
         "Install Intel CPU microcode  (sys-firmware/intel-microcode)?" "y"
 
     # ---- Plymouth ----
-    ask_radio PLYMOUTH_THEME_SET "Boot Splash" \
-        "Plymouth theme:" \
-        "solar"   "Solar   (animated sun rings)"     "on"  \
-        "bgrt"    "BGRT    (OEM logo, if available)"  "off" \
-        "spinner" "Spinner (simple spinner)"          "off" \
-        "tribar"  "Tribar  (three-bar progress)"      "off"
+    if [[ "$INSTALL_TYPE" == "desktop" ]]; then
+        ask_radio PLYMOUTH_THEME_SET "Boot Splash" \
+            "Plymouth theme:" \
+            "solar"   "Solar   (animated sun rings)"     "on"  \
+            "bgrt"    "BGRT    (OEM logo, if available)"  "off" \
+            "spinner" "Spinner (simple spinner)"          "off" \
+            "tribar"  "Tribar  (three-bar progress)"      "off"
+    else
+        PLYMOUTH_THEME_SET=""
+    fi
 
     # ---- Secure Boot ----
     ask_yesno SECUREBOOT_MODSIGN "Secure Boot" \
@@ -288,6 +311,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
 
   Hostname        : $HOSTNAME
   Init system     : $INIT_SYSTEM
+  Install type    : $INSTALL_TYPE
   Variant         : $INSTALL_VARIANT
   Timezone        : $TIMEZONE_SET
   Locale          : ${ESELECT_LOCALE_SET:-"(musl — not applicable)"}
@@ -335,7 +359,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     export HOSTNAME TIMEZONE_SET LOCALE_GEN_SET ESELECT_LOCALE_SET CONSOLE_KEYMAP
-    export INIT_SYSTEM INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
+    export INIT_SYSTEM INSTALL_TYPE INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
@@ -408,27 +432,35 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # Dynamic parallel emerge/make jobs based on RAM, swap and CPU threads.
     #
-    # LLVM variants: clang uses ~4 GiB per compile thread (conservative).
-    # 2 GiB reserved for OS/Portage overhead. EMERGE_JOBS forced to 1 —
-    # make -l does NOT coordinate across emerge jobs.
+    # LLVM variants: ~2 GiB per compile thread (typical; peak is higher for
+    # heavyweight packages like LLVM itself, but those are built first via the
+    # LLVM-upgrade step before this formula matters for the rest of the world).
+    # 1 GiB reserved for OS/Portage overhead.
+    # total_slots = (RAM - 1 GiB) / 2 GiB; EMERGE_JOBS = total_slots / nproc
+    # (clamped to [1,4]); make_j = total_slots / EMERGE_JOBS (clamped to nproc).
+    # make -l keeps instantaneous load ≤ make_j regardless of EMERGE_JOBS.
     #
-    # GCC variants: ~384 MiB per concurrent thread is sufficient.
+    # GCC variants: ~256 MiB per concurrent thread (average across packages).
     # Swap counted at 50% (slower than RAM). Full nproc for MAKEOPTS.
     _nproc=$(nproc)
     case "$INSTALL_VARIANT" in
         llvm|musl-llvm|musl-llvm-hardened)
             _ram_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
-            EMERGE_JOBS=1
-            _make_j=$(( (_ram_mib - 2048) / 4096 ))
+            _total_slots=$(( (_ram_mib - 1024) / 2048 ))
+            [[ $_total_slots -lt 1 ]] && _total_slots=1
+            EMERGE_JOBS=$(( _total_slots / _nproc ))
+            [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
+            [[ $EMERGE_JOBS -gt 4 ]] && EMERGE_JOBS=4
+            _make_j=$(( _total_slots / EMERGE_JOBS ))
             [[ $_make_j -gt $_nproc ]] && _make_j=$_nproc
             [[ $_make_j -lt 1 ]] && _make_j=1
             _pipe_flag=" -pipe"
             _lto_flag=" -flto=thin"
-            echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs 1, ThinLTO"
+            echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs ${EMERGE_JOBS}, ThinLTO"
             ;;
         *)
             _eff_mib=$(awk '/MemTotal/{r=$2} /SwapTotal/{s=$2} END{printf "%d", (r + s/2) / 1024}' /proc/meminfo)
-            EMERGE_JOBS=$(( _eff_mib / 384 / _nproc ))
+            EMERGE_JOBS=$(( _eff_mib / 256 / _nproc ))
             [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
             [[ $EMERGE_JOBS -gt $_nproc ]] && EMERGE_JOBS=$_nproc
             _make_j=$_nproc
@@ -623,13 +655,21 @@ BINCONF
         > /etc/portage/package.use/kmod
 
     mkdir -p /etc/portage/package.accept_keywords/
-    cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
+    if [[ "${INSTALL_TYPE:-desktop}" == "server" ]]; then
+        # Server: use stable kernel — no ~amd64 keyword for kernel packages
+        cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
+app-crypt/sbctl ~amd64
+sys-boot/mokutil ~amd64
+KEYWORDS
+    else
+        cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
 app-crypt/sbctl ~amd64
 sys-boot/mokutil ~amd64
 sys-kernel/gentoo-kernel-bin ~amd64
 sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
 KEYWORDS
+    fi
 
     echo "[*] [CHROOT] Installing sbctl and generating MOK keys"
     emerge -N app-crypt/efitools app-crypt/sbctl
@@ -654,22 +694,30 @@ KEYWORDS
 
     echo "[*] [CHROOT] Installing core packages"
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+        _PLYMOUTH_PKG=""
+        [[ "${INSTALL_TYPE:-desktop}" == "desktop" ]] && _PLYMOUTH_PKG="sys-boot/plymouth"
         emerge -N \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
             app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
-            sys-apps/systemd sys-apps/kmod dev-vcs/git sys-boot/plymouth \
-            sys-kernel/dracut
+            sys-apps/systemd sys-apps/kmod dev-vcs/git \
+            sys-kernel/dracut \
+            ${_PLYMOUTH_PKG:+"$_PLYMOUTH_PKG"}
     else
-        cat >> /etc/portage/package.accept_keywords/pkgs <<KEYWORDPLY
+        _PLYMOUTH_PKGS=""
+        if [[ "${INSTALL_TYPE:-desktop}" == "desktop" ]]; then
+            cat >> /etc/portage/package.accept_keywords/pkgs <<KEYWORDPLY
 sys-boot/plymouth-openrc-plugin ~amd64
 KEYWORDPLY
+            _PLYMOUTH_PKGS="sys-boot/plymouth sys-boot/plymouth-openrc-plugin"
+        fi
         emerge -N \
             sys-boot/grub sys-boot/shim sys-boot/efibootmgr sys-boot/mokutil \
             app-crypt/efitools app-eselect/eselect-repository \
             sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/dosfstools \
-            sys-auth/elogind sys-apps/kmod dev-vcs/git sys-boot/plymouth \
-            sys-boot/plymouth-openrc-plugin sys-kernel/dracut
+            sys-auth/elogind sys-apps/kmod dev-vcs/git \
+            sys-kernel/dracut \
+            ${_PLYMOUTH_PKGS:+$_PLYMOUTH_PKGS}
     fi
 
     SHIM_EFI="/usr/share/shim/BOOTX64.EFI"
@@ -729,7 +777,11 @@ SELINUXCONF
 
     echo "[*] [CHROOT] Writing dracut config"
     mkdir -p /etc/dracut.conf.d
-    DRACUT_MODULES="btrfs plymouth"
+    if [[ "${INSTALL_TYPE:-desktop}" == "desktop" ]]; then
+        DRACUT_MODULES="btrfs plymouth"
+    else
+        DRACUT_MODULES="btrfs"
+    fi
     [[ "$LUKSED" == "y" ]] && DRACUT_MODULES+=" crypt"
     [[ "${SELINUX:-n}" == "y" ]] && DRACUT_MODULES+=" selinux"
     cat > /etc/dracut.conf.d/gentoo.conf <<DRACUT
@@ -776,8 +828,12 @@ TPM2CONF
     # GRUB CONFIGURATION
     # =========================================================================
     echo "[*] [CHROOT] Configuring /etc/default/grub"
-    CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw splash mem_sleep_default=s2idle"
-    [[ "$INIT_SYSTEM" == "openrc" ]] && CMDLINE_LINUX+=" rd.udev.log_priority=3 vt.global_cursor_default=0"
+    if [[ "${INSTALL_TYPE:-desktop}" == "desktop" ]]; then
+        CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw splash mem_sleep_default=s2idle"
+        [[ "$INIT_SYSTEM" == "openrc" ]] && CMDLINE_LINUX+=" rd.udev.log_priority=3 vt.global_cursor_default=0"
+    else
+        CMDLINE_LINUX="root=UUID=$ROOT_UUID quiet rw"
+    fi
     [[ "$LUKSED" == "y" ]] && CMDLINE_LINUX+=" rd.luks.uuid=$LUKS_UUID rd.luks.name=$LUKS_UUID=root"
     [[ "${SELINUX:-n}" == "y" ]] && CMDLINE_LINUX+=" security=selinux selinux=1"
     sed -i "s|^#*GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$CMDLINE_LINUX\"|" \
@@ -920,25 +976,25 @@ HNCONF
     # ADDITIONAL PACKAGES
     # =========================================================================
     echo "[*] [CHROOT] Installing additional packages"
+    _WIFI_PKGS=""
+    [[ "${INSTALL_TYPE:-desktop}" == "desktop" ]] && _WIFI_PKGS="net-wireless/iw net-wireless/wpa_supplicant"
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
         emerge -N \
             sys-apps/plocate \
             net-misc/chrony \
-            net-wireless/iw \
-            net-wireless/wpa_supplicant \
             net-misc/dhcpcd \
             app-admin/sudo \
-            net-misc/networkmanager
+            net-misc/networkmanager \
+            ${_WIFI_PKGS:+$_WIFI_PKGS}
     else
         emerge -N \
             sys-apps/plocate \
             net-misc/chrony \
-            net-wireless/iw \
-            net-wireless/wpa_supplicant \
             net-misc/dhcpcd \
             app-admin/sudo \
             net-misc/networkmanager \
-            sys-process/cronie
+            sys-process/cronie \
+            ${_WIFI_PKGS:+$_WIFI_PKGS}
     fi
 
     # =========================================================================
@@ -946,9 +1002,11 @@ HNCONF
     # =========================================================================
     if [[ "$INIT_SYSTEM" == "systemd" ]]; then
         systemctl enable chronyd.service NetworkManager
-        plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+        if [[ "${INSTALL_TYPE:-desktop}" == "desktop" ]]; then
+            plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+        fi
         # Disable hibernation: not supported with Secure Boot lockdown.
-        # Suspend-to-idle (s2idle) is set via kernel cmdline.
+        # Suspend-to-idle (s2idle) is set via kernel cmdline (desktop only).
         systemctl mask hibernate.target suspend-then-hibernate.target
     else
         rc-update add chronyd default
@@ -956,10 +1014,12 @@ HNCONF
         rc-update add elogind boot
         rc-update add cronie default
         [[ "${SELINUX:-n}" == "y" ]] && rc-update add selinux_gentoo boot
-        plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
-        # plymouth-openrc-plugin handles Plymouth lifecycle automatically.
-        # Disable interactive mode so OpenRC doesn't conflict with Plymouth.
-        sed -i 's/^#*rc_interactive=.*/rc_interactive="NO"/' /etc/rc.conf
+        if [[ "${INSTALL_TYPE:-desktop}" == "desktop" ]]; then
+            plymouth-set-default-theme "$PLYMOUTH_THEME_SET"
+            # plymouth-openrc-plugin handles Plymouth lifecycle automatically.
+            # Disable interactive mode so OpenRC doesn't conflict with Plymouth.
+            sed -i 's/^#*rc_interactive=.*/rc_interactive="NO"/' /etc/rc.conf
+        fi
     fi
 
     # =========================================================================
@@ -1458,7 +1518,13 @@ swapon /mnt/gentoo/swap/swap.img
 echo "[*] [HOST] Downloading stage3 ($INSTALL_VARIANT / $INIT_SYSTEM)"
 cd /mnt/gentoo
 case "$INSTALL_VARIANT" in
-    standard)           STAGE3_VARIANT="desktop-${INIT_SYSTEM}" ;;
+    standard)
+        if [[ "${INSTALL_TYPE:-desktop}" == "server" ]]; then
+            STAGE3_VARIANT="${INIT_SYSTEM}"           # stage3-amd64-systemd / stage3-amd64-openrc
+        else
+            STAGE3_VARIANT="desktop-${INIT_SYSTEM}"
+        fi
+        ;;
     llvm)               STAGE3_VARIANT="llvm-${INIT_SYSTEM}" ;;
     hardened)           STAGE3_VARIANT="hardened-${INIT_SYSTEM}" ;;
     musl)               STAGE3_VARIANT="musl" ;;
@@ -1500,6 +1566,7 @@ chmod +x /mnt/gentoo/gentoo-install.sh
 chroot /mnt/gentoo /usr/bin/env \
     HOSTNAME="$HOSTNAME" \
     INIT_SYSTEM="$INIT_SYSTEM" \
+    INSTALL_TYPE="$INSTALL_TYPE" \
     INSTALL_VARIANT="$INSTALL_VARIANT" \
     TIMEZONE_SET="$TIMEZONE_SET" \
     LOCALE_GEN_SET="$LOCALE_GEN_SET" \

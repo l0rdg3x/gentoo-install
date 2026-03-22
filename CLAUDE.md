@@ -80,6 +80,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 |---|---|---|
 | `HOSTNAME` | string | System hostname |
 | `INIT_SYSTEM` | `systemd`/`openrc` | Init system to install |
+| `INSTALL_TYPE` | `desktop`/`server` | Installation type: desktop includes Plymouth + Wi-Fi tools; server uses stable kernel, no splash, no Wi-Fi tools |
 | `INSTALL_VARIANT` | string | `standard`/`llvm`/`hardened`/`musl`/`musl-llvm`/`musl-hardened`/`musl-llvm-hardened` |
 | `TIMEZONE_SET` | string | e.g. `Europe/Rome` |
 | `LOCALE_GEN_SET` | string | `/etc/locale.gen` entries (newline-separated via `\n`) |
@@ -268,28 +269,29 @@ Toolchain variables appended after the main heredoc:
 
 ### Dynamic Parallel Emerge Jobs
 
-`EMERGE_JOBS` and `MAKEOPTS` are calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang uses ~4 GiB per compile thread (vs ~384 MiB for GCC).
+`EMERGE_JOBS` and `MAKEOPTS` are calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang uses more memory per compile thread than GCC.
 
 **Standard / hardened / musl variants (GCC):**
 ```
 effective_mem = RAM + swap / 2         (swap counted at 50%, slower than RAM)
-EMERGE_JOBS  = effective_mem / 384 MiB / nproc   (clamped to [1, nproc])
+EMERGE_JOBS  = effective_mem / 256 MiB / nproc   (clamped to [1, nproc])
 MAKEOPTS     = -j$(nproc) -l$(nproc)
 CFLAGS       = -march=native -O2 -pipe -flto
 ```
 
 **LLVM variants (llvm, musl-llvm, musl-llvm-hardened):**
 ```
-EMERGE_JOBS  = 1                       (always — parallel jobs cause OOM because
-                                        make -l limits don't coordinate across jobs)
-MAKEOPTS     = -j((RAM - 2 GiB) / 4 GiB)  (clamped to [1, nproc]; 2 GiB reserved for OS)
+total_slots  = (RAM - 1 GiB) / 2 GiB  (1 GiB OS reserve; 2 GiB/thread typical for clang)
+EMERGE_JOBS  = total_slots / nproc     (clamped to [1, 4])
+make_j       = total_slots / EMERGE_JOBS  (clamped to [1, nproc])
+MAKEOPTS     = -j${make_j} -l${make_j}
 CFLAGS       = -march=native -O2 -pipe -flto=thin
 ```
 
-The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
+`make -l` keeps instantaneous system load ≤ make_j regardless of how many emerge jobs are running, so multiple emerge jobs overlap safely in their configure/link phases without multiplying peak compiler concurrency beyond what RAM allows.
 
-Examples (GCC): 16GB/12t → `-j12`, 3 emerge jobs. 64GB/16t → `-j16`, 10 emerge jobs.
-Examples (LLVM): 16GB/4t → `-j3`, 1 emerge job. 8GB/4t → `-j1`, 1 emerge job.
+Examples (GCC): 16GB/8t → `-j8`, 8 emerge jobs. 8GB/4t → `-j4`, 4 emerge jobs.
+Examples (LLVM): 8GB/4t → slots=3, 1 job × `-j3`. 16GB/8t → slots=7, 1 job × `-j7`. 32GB/16t → slots=15, 1 job × `-j15`. 256GB/32t → slots=127, 3 jobs × `-j32`.
 
 ### LLVM Toolchain Upgrade (Gentoo bug #965718)
 
@@ -404,7 +406,6 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 
 - AMD64 / x86_64 only (no ARM64)
 - TPM2 auto-unlock uses `systemd-cryptenroll` (systemd) or `clevis` (OpenRC)
-- Desktop use only (no server-optimized stage3 option)
 - Defaults lean toward Italian locale (`Europe/Rome`, `it_IT`, `it` keymap) — change interactively at wizard prompts
 
 ---
