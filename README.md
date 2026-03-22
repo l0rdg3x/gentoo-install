@@ -82,7 +82,7 @@ After confirmation, the script runs unattended through two phases:
 **Chroot phase** (automatic):
 1. Syncs Portage and sets the selected profile (including SELinux sub-profile if enabled)
 2. Selects best mirrors via `mirrorselect`
-3. Generates `make.conf` with native CPU flags, parallel build settings, and variant-specific flags (hardened CFLAGS, LLVM toolchain, SELinux USE flags)
+3. Generates `make.conf` with native CPU flags, LTO, parallel build settings, and variant-specific flags (hardened CFLAGS, LLVM toolchain, SELinux USE flags). For LLVM variants: upgrades LLVM toolchain to v22+ immediately (workaround for Gentoo bug #965718)
 4. Configures binary package repository (standard variant only)
 5. Sets locale, timezone, and keymap
 6. Installs kernel (binary or source-based), firmware, and microcode
@@ -283,9 +283,11 @@ All EFI binaries live in `/boot/EFI/gentoo/`. `grub-install` is **not** used —
 The generated `/etc/portage/make.conf` includes:
 
 ```
-COMMON_FLAGS="-march=native -O2 -pipe [-fstack-protector-strong -D_FORTIFY_SOURCE=2]"
+COMMON_FLAGS="-march=native -O2 -pipe [-fstack-protector-strong [-D_FORTIFY_SOURCE=2]] -flto[=thin]"
+             # GCC variants:  -flto   LLVM variants: -flto=thin
 MAKEOPTS="-j$(nproc) -l$(nproc)"
 EMERGE_DEFAULT_OPTS="--jobs <dynamic> --load-average $(nproc)"
+LDFLAGS="${LDFLAGS} -flto[=thin]"
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
 USE="dist-kernel systemd|elogind [hardened pie ssp] [selinux unconfined] [modules-sign secureboot]"
 ACCEPT_LICENSE="*"
@@ -293,7 +295,9 @@ GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="<your selection>"
 ```
 
-`--jobs` and `MAKEOPTS` are calculated dynamically at install time. For GCC variants: `MAKEOPTS=-j$(nproc)`, emerge `--jobs (RAM+swap/2) / 384 MiB / nproc` (clamped `[1, nproc]`). For LLVM variants: `MAKEOPTS=-j((RAM-2GiB)/4GiB)` (clamped `[1, nproc]`), emerge `--jobs 1`, `-pipe` omitted from CFLAGS, and known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"` to prevent OOM.
+LTO is enabled for all variants: ThinLTO (`-flto=thin`) for LLVM/lld, full LTO (`-flto`) for GCC. GCC LTO requires `gcc-ar`/`gcc-nm`/`gcc-ranlib` in make.conf so binutils can see the LTO plugin at link time; LLVM uses `llvm-ar`/`llvm-nm`/`llvm-ranlib`.
+
+`--jobs` and `MAKEOPTS` are calculated dynamically at install time. For GCC variants: `MAKEOPTS=-j$(nproc)`, emerge `--jobs (RAM+swap/2) / 384 MiB / nproc` (clamped `[1, nproc]`). For LLVM variants: `MAKEOPTS=-j((RAM-2GiB)/4GiB)` (clamped `[1, nproc]`), emerge `--jobs 1` (multiple emerge jobs would multiply clang's ~4 GiB per thread across jobs, causing OOM).
 
 Best mirrors are auto-selected via `mirrorselect`. CPU flags are auto-detected via `cpuid2cpuflags`.
 
