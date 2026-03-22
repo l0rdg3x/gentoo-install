@@ -164,15 +164,13 @@ if [[ "${1:-}" != "--chroot" ]]; then
                 "Select a Portage profile:" \
                 "default/linux/amd64/23.0/desktop/plasma/systemd" "KDE Plasma / systemd"      "on"  \
                 "default/linux/amd64/23.0/desktop/gnome/systemd"  "GNOME / systemd"           "off" \
-                "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off" \
-                "default/linux/amd64/23.0/systemd"                "Minimal / systemd"         "off"
+                "default/linux/amd64/23.0/desktop/systemd"        "Desktop (no DE) / systemd" "off"
         else
             ask_radio ESELECT_PROF "Portage Profile" \
                 "Select a Portage profile:" \
                 "default/linux/amd64/23.0/desktop/plasma" "KDE Plasma / OpenRC"      "on"  \
                 "default/linux/amd64/23.0/desktop/gnome"  "GNOME / OpenRC"           "off" \
-                "default/linux/amd64/23.0/desktop"        "Desktop (no DE) / OpenRC" "off" \
-                "default/linux/amd64/23.0"                "Minimal / OpenRC"         "off"
+                "default/linux/amd64/23.0/desktop"        "Desktop (no DE) / OpenRC" "off"
         fi
     else
         # Non-standard variants: profile assigned automatically (no desktop variants exist)
