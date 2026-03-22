@@ -110,15 +110,20 @@ if [[ "${1:-}" != "--chroot" ]]; then
     ESELECT_LOCALE_SET=""
 
     # ---- Installation Variant ----
-    ask_radio INSTALL_VARIANT "Installation Variant" \
-        "Select the installation variant:" \
-        "standard"           "Standard (glibc + GCC) — recommended"        "on"  \
-        "llvm"               "LLVM (glibc + Clang/LLVM)"                   "off" \
-        "hardened"           "Hardened (glibc + GCC + hardened)"            "off" \
-        "musl"               "Musl (musl + GCC)"                           "off" \
-        "musl-llvm"          "Musl + LLVM (musl + Clang/LLVM)"             "off" \
-        "musl-hardened"      "Musl + Hardened (musl + GCC + hardened)"     "off" \
-        "musl-llvm-hardened" "Musl + LLVM + Hardened (experimental combo)" "off"
+    if [[ "$INSTALL_TYPE" == "desktop" ]]; then
+        # Desktop only supports standard (glibc + GCC); force it silently
+        INSTALL_VARIANT="standard"
+    else
+        ask_radio INSTALL_VARIANT "Installation Variant" \
+            "Select the installation variant:" \
+            "standard"           "Standard (glibc + GCC) — recommended"        "on"  \
+            "llvm"               "LLVM (glibc + Clang/LLVM)"                   "off" \
+            "hardened"           "Hardened (glibc + GCC + hardened)"            "off" \
+            "musl"               "Musl (musl + GCC)"                           "off" \
+            "musl-llvm"          "Musl + LLVM (musl + Clang/LLVM)"             "off" \
+            "musl-hardened"      "Musl + Hardened (musl + GCC + hardened)"     "off" \
+            "musl-llvm-hardened" "Musl + LLVM + Hardened (experimental combo)" "off"
+    fi
 
     # ---- musl + systemd guard ----
     # musl variants only support OpenRC (systemd requires glibc)
