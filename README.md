@@ -297,7 +297,7 @@ VIDEO_CARDS="<your selection>"
 
 LTO is enabled for all variants: ThinLTO (`-flto=thin`) for LLVM/lld, full LTO (`-flto`) for GCC. GCC LTO requires `gcc-ar`/`gcc-nm`/`gcc-ranlib` in make.conf so binutils can see the LTO plugin at link time; LLVM uses `llvm-ar`/`llvm-nm`/`llvm-ranlib`.
 
-`--jobs` and `MAKEOPTS` are calculated dynamically at install time. For GCC variants: `MAKEOPTS=-j$(nproc)`, emerge `--jobs (RAM+swap/2) / 384 MiB / nproc` (clamped `[1, nproc]`). For LLVM variants: `MAKEOPTS=-j((RAM-2GiB)/4GiB)` (clamped `[1, nproc]`), emerge `--jobs 1` (multiple emerge jobs would multiply clang's ~4 GiB per thread across jobs, causing OOM).
+`--jobs` and `MAKEOPTS` are calculated dynamically at install time. For GCC variants: `MAKEOPTS=-j$(nproc)`, emerge `--jobs (RAM+swap/2) / 256 MiB / nproc` (clamped `[1, nproc]`). For LLVM variants: `total_slots = (RAM-1GiB)/2GiB`; `EMERGE_JOBS = clamp(1..4, total_slots/nproc)`; `MAKEOPTS=-j(total_slots/EMERGE_JOBS)` (clamped `[1, nproc]`). `make -l` keeps instantaneous load ≤ make_j, so multiple emerge jobs overlap in configure/link without multiplying peak compiler concurrency.
 
 Best mirrors are auto-selected via `mirrorselect`. CPU flags are auto-detected via `cpuid2cpuflags`.
 

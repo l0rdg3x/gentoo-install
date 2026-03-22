@@ -408,27 +408,35 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # Dynamic parallel emerge/make jobs based on RAM, swap and CPU threads.
     #
-    # LLVM variants: clang uses ~4 GiB per compile thread (conservative).
-    # 2 GiB reserved for OS/Portage overhead. EMERGE_JOBS forced to 1 —
-    # make -l does NOT coordinate across emerge jobs.
+    # LLVM variants: ~2 GiB per compile thread (typical; peak is higher for
+    # heavyweight packages like LLVM itself, but those are built first via the
+    # LLVM-upgrade step before this formula matters for the rest of the world).
+    # 1 GiB reserved for OS/Portage overhead.
+    # total_slots = (RAM - 1 GiB) / 2 GiB; EMERGE_JOBS = total_slots / nproc
+    # (clamped to [1,4]); make_j = total_slots / EMERGE_JOBS (clamped to nproc).
+    # make -l keeps instantaneous load ≤ make_j regardless of EMERGE_JOBS.
     #
-    # GCC variants: ~384 MiB per concurrent thread is sufficient.
+    # GCC variants: ~256 MiB per concurrent thread (average across packages).
     # Swap counted at 50% (slower than RAM). Full nproc for MAKEOPTS.
     _nproc=$(nproc)
     case "$INSTALL_VARIANT" in
         llvm|musl-llvm|musl-llvm-hardened)
             _ram_mib=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)
-            EMERGE_JOBS=1
-            _make_j=$(( (_ram_mib - 2048) / 4096 ))
+            _total_slots=$(( (_ram_mib - 1024) / 2048 ))
+            [[ $_total_slots -lt 1 ]] && _total_slots=1
+            EMERGE_JOBS=$(( _total_slots / _nproc ))
+            [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
+            [[ $EMERGE_JOBS -gt 4 ]] && EMERGE_JOBS=4
+            _make_j=$(( _total_slots / EMERGE_JOBS ))
             [[ $_make_j -gt $_nproc ]] && _make_j=$_nproc
             [[ $_make_j -lt 1 ]] && _make_j=1
             _pipe_flag=" -pipe"
             _lto_flag=" -flto=thin"
-            echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs 1, ThinLTO"
+            echo "[*] [CHROOT] LLVM variant: ${_ram_mib} MiB RAM, ${_nproc} cores → MAKEOPTS=-j${_make_j}, --jobs ${EMERGE_JOBS}, ThinLTO"
             ;;
         *)
             _eff_mib=$(awk '/MemTotal/{r=$2} /SwapTotal/{s=$2} END{printf "%d", (r + s/2) / 1024}' /proc/meminfo)
-            EMERGE_JOBS=$(( _eff_mib / 384 / _nproc ))
+            EMERGE_JOBS=$(( _eff_mib / 256 / _nproc ))
             [[ $EMERGE_JOBS -lt 1 ]] && EMERGE_JOBS=1
             [[ $EMERGE_JOBS -gt $_nproc ]] && EMERGE_JOBS=$_nproc
             _make_j=$_nproc
