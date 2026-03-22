@@ -276,17 +276,9 @@ MAKEOPTS     = -j((RAM - 2 GiB) / 4 GiB)  (clamped to [1, nproc]; 2 GiB reserved
 CFLAGS       = -march=native -O2      (no -pipe — trades speed for lower memory)
 ```
 
-Additionally, known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones. The overrides are created **immediately after make.conf** to ensure they are active for ALL emerge calls in the chroot.
+Additionally, known memory-heavy packages (LLVM, Rust, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones. The overrides are created **immediately after make.conf** to ensure they are active for ALL emerge calls in the chroot.
 
-The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile` (including `LD="ld.lld"`); do NOT duplicate them in make.conf. For binutils/binutils-libs, `fix-binutils.conf` uses `unset LD` and hard-overrides LDFLAGS (not via `${LDFLAGS}...` — a full replacement).
-
-**Root cause of binutils OOM** (confirmed from official profile source):
-- `profiles/features/llvm/make.defaults` sets `LD="ld.lld"` (needed by libtool)
-- `-fuse-ld=lld`/`-rtlib=compiler-rt`/`-unwindlib=libunwind` are deliberately NOT set in LDFLAGS by the profile — `clang-common` with `default-lld`/`default-compiler-rt` USE flags injects them via clang's response files instead
-- Autotools/libtool detects `LD="ld.lld"` in the environment and generates `-fuse-ld=lld` in every link command it constructs. In binutils' deep recursive sub-makes this accumulates: each level adds another copy → hundreds of duplicate `-fuse-ld=lld` → command-line overflow → OOM
-- **The musl-llvm stage3 has NO GCC** (`llvm-runtimes/libgcc` provides libgcc_s with `RDEPEND="!sys-devel/gcc"`), so `CC="gcc"` fallback approaches are impossible on musl-llvm
-
-**Fix**: Hard-override LDFLAGS (full replacement, NOT `${LDFLAGS}...` append) and force `MAKEOPTS="-j1"` via a per-package env for binutils. The full LDFLAGS replacement removes any `-fuse-ld=lld` injected by clang-common's env.d. Libtool may still generate `-fuse-ld=lld` once per link command (from LD=ld.lld), but a single occurrence is harmless — lld is used regardless via clang's built-in default. MAKEOPTS=-j1 prevents parallel lld processes from OOMing. Note: Portage env files do NOT support shell builtins (`unset`, `export`, etc.) — only `VAR=VALUE` assignments are valid syntax.
+The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile`; do NOT duplicate them in make.conf.
 
 The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
@@ -353,7 +345,6 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/etc/portage/binrepos.conf/gentoobinhost.conf` | Binary package repo |
 | `/etc/portage/package.use/*` | Per-package USE flags |
 | `/etc/portage/env/low-memory.conf` | MAKEOPTS=-j1 for heavy packages (LLVM variants only) |
-| `/etc/portage/env/fix-binutils.conf` | `unset LD` + hard-override LDFLAGS for binutils (stops libtool -fuse-ld=lld recursion, LLVM variants only) |
 | `/etc/portage/package.env` | Per-package env overrides (LLVM variants only) |
 | `/etc/portage/package.accept_keywords/pkgs` | `~amd64` keywords |
 | `/etc/portage/repos.conf/gentoo.conf` | Git-based Portage repo config |

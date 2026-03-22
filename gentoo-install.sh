@@ -478,8 +478,6 @@ MAKECONF
 
 # LLVM/Clang toolchain — only CC/CXX and safe binutils replacements.
 # LD, AS, CPP, STRIP, etc. are set by the LLVM profile via eselect.
-# Setting LD="ld.lld" in make.conf causes libtool to accumulate
-# -fuse-ld=lld recursively in autotools packages (binutils-libs).
 CC="clang"
 CXX="clang++"
 AR="llvm-ar"
@@ -492,8 +490,7 @@ LLVMCONF
 
     # Per-package MAKEOPTS/NINJAOPTS overrides for LLVM variants.
     # MUST be created before any emerge call — heavy packages pulled as deps
-    # (e.g. binutils-libs via mirrorselect/cpuid2cpuflags) would otherwise
-    # compile with the global MAKEOPTS under clang, causing OOM.
+    # would otherwise compile with the global MAKEOPTS under clang, causing OOM.
     case "$INSTALL_VARIANT" in
         llvm|musl-llvm|musl-llvm-hardened)
             echo "[*] [CHROOT] Setting per-package overrides for memory-heavy packages"
@@ -502,25 +499,6 @@ LLVMCONF
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
 LOWMEM
-            # The Gentoo LLVM profile sets LD="ld.lld" in its make.defaults.
-            # Autotools/libtool detects this and generates "-fuse-ld=lld" in link
-            # commands. clang-common with default-lld may also inject it via env.d.
-            # For binutils/binutils-libs (deep recursive autotools), this causes OOM
-            # from accumulated flags and parallel lld instances.
-            #
-            # Fix: hard-override LDFLAGS (full replacement, NOT appending to ${LDFLAGS}
-            # which would preserve accumulated flags) and force MAKEOPTS="-j1".
-            # Note: Portage env files do not support shell builtins (unset, export, etc.)
-            # — only VAR=VALUE assignments are valid.
-            cat > /etc/portage/env/fix-binutils.conf <<'FIXBINUTILS'
-# Hard-override LDFLAGS for binutils/binutils-libs: full replacement prevents
-# any -fuse-ld=lld accumulation from clang-common env.d or libtool recursion.
-# Clang compiled with default-lld still uses lld internally via its built-in
-# default — no explicit -fuse-ld flag is needed in LDFLAGS.
-LDFLAGS="-Wl,-O1 -Wl,--as-needed"
-MAKEOPTS="-j1 -l1"
-NINJAOPTS="-j1"
-FIXBINUTILS
             cat > /etc/portage/package.env <<'PKGENV'
 # Heavy packages that cause OOM with clang at higher parallelism.
 # These get MAKEOPTS="-j1" and NINJAOPTS="-j1" via low-memory.conf.
@@ -534,28 +512,7 @@ dev-qt/qtwebengine low-memory.conf
 www-client/firefox low-memory.conf
 www-client/chromium low-memory.conf
 app-office/libreoffice low-memory.conf
-# binutils: hard-override LDFLAGS + MAKEOPTS=-j1 to prevent lld OOM (see fix-binutils.conf)
-sys-libs/binutils-libs fix-binutils.conf
-sys-devel/binutils fix-binutils.conf
 PKGENV
-            # Bug #965718: sys-libs/binutils-libs-2.45-r1 OOMs during configure
-            # with LLVM 21 ("checking whether compiler driver understands Ada and
-            # is recent enough"). Accept ~amd64 for all LLVM packages to get
-            # LLVM 22+, then upgrade the toolchain immediately so that any
-            # subsequent emerge (including binutils-libs pulled as a dep) runs
-            # the Ada check against the fixed compiler.
-            mkdir -p /etc/portage/package.accept_keywords
-            cat > /etc/portage/package.accept_keywords/llvm-testing <<'LLVMKEYWORDS'
-# Accept ~amd64 for LLVM 22+ to work around Gentoo bug #965718:
-# binutils-libs-2.45 OOMs during configure with LLVM 21 (Ada compiler check).
-llvm-core/* ~amd64
-llvm-runtimes/* ~amd64
-LLVMKEYWORDS
-            echo "[*] [CHROOT] Upgrading LLVM toolchain (workaround for Gentoo bug #965718)"
-            emerge -N \
-                llvm-core/llvm \
-                llvm-core/clang \
-                llvm-core/lld
             ;;
     esac
 
