@@ -527,7 +527,7 @@ llvm-core/* ~amd64
 llvm-runtimes/* ~amd64
 LLVMKEYWORDS
             echo "[*] [CHROOT] Upgrading LLVM toolchain (workaround for Gentoo bug #965718)"
-            emerge -N \
+            emerge -uN \
                 llvm-core/llvm \
                 llvm-core/clang \
                 llvm-core/lld
