@@ -278,7 +278,15 @@ CFLAGS       = -march=native -O2      (no -pipe — trades speed for lower memor
 
 Additionally, known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones. The overrides are created **immediately after make.conf** to ensure they are active for ALL emerge calls in the chroot.
 
-The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile` (including `LD="ld.lld"`); do NOT duplicate them in make.conf. For binutils/binutils-libs, `fix-binutils.conf` unsets LD and hard-overrides LDFLAGS because: the LLVM profile sets `LD="ld.lld"` in its `make.defaults`; autotools/libtool detects this and generates a `-fuse-ld=lld` compiler flag; in binutils' deep recursive make structure each sub-make appends another copy → hundreds of duplicate flags → command-line overflow → OOM. With `LD` unset, libtool does not generate the flag. Clang compiled with `default-lld` still uses lld via its built-in default — no explicit `-fuse-ld=lld` needed.
+The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile` (including `LD="ld.lld"`); do NOT duplicate them in make.conf. For binutils/binutils-libs, `fix-binutils.conf` uses `unset LD` and hard-overrides LDFLAGS (not via `${LDFLAGS}...` — a full replacement).
+
+**Root cause of binutils OOM** (confirmed from official profile source):
+- `profiles/features/llvm/make.defaults` sets `LD="ld.lld"` (needed by libtool)
+- `-fuse-ld=lld`/`-rtlib=compiler-rt`/`-unwindlib=libunwind` are deliberately NOT set in LDFLAGS by the profile — `clang-common` with `default-lld`/`default-compiler-rt` USE flags injects them via clang's response files instead
+- Autotools/libtool detects `LD="ld.lld"` in the environment and generates `-fuse-ld=lld` in every link command it constructs. In binutils' deep recursive sub-makes this accumulates: each level adds another copy → hundreds of duplicate `-fuse-ld=lld` → command-line overflow → OOM
+- **The musl-llvm stage3 has NO GCC** (`llvm-runtimes/libgcc` provides libgcc_s with `RDEPEND="!sys-devel/gcc"`), so `CC="gcc"` fallback approaches are impossible on musl-llvm
+
+**Fix**: `unset LD` in a per-package env for binutils. With LD unset, libtool does not generate `-fuse-ld=lld` — no accumulation. Clang compiled with `default-lld` still uses lld via its built-in default (no explicit flag needed). LDFLAGS is hard-overridden to prevent any residual `-fuse-ld=lld` from env.d files.
 
 The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
