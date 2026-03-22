@@ -7,21 +7,22 @@ An interactive installation script for Gentoo Linux desktop systems. It walks yo
 ## Features
 
 - **Interactive dialog wizard** — no need to edit the script; every option is configured at runtime
+- **Desktop and server** — dedicated installation type: desktop includes Plymouth, Wi-Fi tools, and suspend-to-idle; server uses a stable kernel and skips desktop-only packages
 - **systemd and OpenRC** — choose your init system; all features work with both
-- **Installation variants** — standard (GCC), LLVM (Clang), hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened
+- **Installation variants** — standard (GCC), LLVM (Clang), hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened; server type works with all variants
 - **LUKS full-disk encryption** with optional **TPM2 auto-unlock** (PCR 7)
 - **Btrfs** with subvolumes (`@`, `@home`, `@log`, `@cache`, `@tmp`, `@swap`) and zstd compression
 - **Secure Boot** via shim + pre-signed standalone GRUB + sbctl MOK keys + kernel module signing
 - **SELinux** — optional Mandatory Access Control for the hardened variant (targeted, strict, or mls policy)
 - **GRUB password protection** — optional password to prevent editing boot parameters
-- **Plymouth** boot splash with theme selection (solar, bgrt, spinner, tribar)
+- **Plymouth** boot splash with theme selection (solar, bgrt, spinner, tribar) — desktop only
 - **Binary packages** — optional Gentoo binhost with x86-64 or x86-64-v3 selection (standard variant only)
 - **ZRAM swap** — zstd-compressed RAM swap configured automatically alongside the Btrfs swap file
-- **Suspend-to-idle** — `mem_sleep_default=s2idle` set by default in kernel cmdline for modern hardware
+- **Suspend-to-idle** — `mem_sleep_default=s2idle` set in kernel cmdline for desktop installs
 - **grub-btrfs ready** — config pre-created so snapshot boot entries work out of the box after `emerge sys-boot/grub-btrfs`
 - **Pre-installation validation** — checks root privileges, UEFI mode, disk availability, required tools, and network before any destructive operation
 - **NVMe and SATA/SSD** support with automatic partition naming
-- **Portage profiles** — KDE Plasma, GNOME, Desktop, or Minimal for standard variant; auto-assigned for other variants
+- **Portage profiles** — KDE Plasma, GNOME, Desktop, or Minimal for standard desktop; Base or Minimal for standard server; auto-assigned for other variants
 
 ## Prerequisites
 
@@ -54,14 +55,15 @@ The dialog wizard will ask for:
 |---|---|
 | **System** | Hostname |
 | **Init system** | systemd or OpenRC |
+| **Install type** | desktop (Plymouth, Wi-Fi tools, suspend-to-idle) or server (stable kernel, minimal packages) |
 | **Variant** | standard, llvm, hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened |
 | **Localization** | Timezone, locale, keymap |
-| **Profile** | KDE Plasma / GNOME / Desktop / Minimal (standard variant); auto-assigned for others |
+| **Profile** | KDE Plasma / GNOME / Desktop / Minimal (standard desktop); Base / Minimal (standard server); auto-assigned for other variants |
 | **Portage** | Binary packages (y/n, standard variant only), x86-64-v3 binaries (y/n), mirror URL |
 | **Disk** | Target device type (NVMe/SSD), device path, swap size |
 | **Encryption** | LUKS (y/n), passphrase, TPM2 unlock (y/n) |
 | **Hardware** | VIDEO_CARDS, Intel microcode (y/n) |
-| **Boot** | Plymouth theme, Secure Boot (y/n), MOK password, GRUB password (y/n) |
+| **Boot** | Plymouth theme (desktop only), Secure Boot (y/n), MOK password, GRUB password (y/n) |
 | **SELinux** | Enable (y/n, hardened variant only), policy type (targeted/strict/mls) |
 | **Users** | Root password, non-root username and password |
 
@@ -339,7 +341,6 @@ SELinux (if enabled): `libselinux`, `policycoreutils`, `checkpolicy`, `selinux-b
 
 ## TODO
 
-- [ ] Server use option (different stage3)
 - [ ] Multi-architecture support (ARM64)
 
 ## Contributing

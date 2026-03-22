@@ -80,6 +80,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 |---|---|---|
 | `HOSTNAME` | string | System hostname |
 | `INIT_SYSTEM` | `systemd`/`openrc` | Init system to install |
+| `INSTALL_TYPE` | `desktop`/`server` | Installation type: desktop includes Plymouth + Wi-Fi tools; server uses stable kernel, no splash, no Wi-Fi tools |
 | `INSTALL_VARIANT` | string | `standard`/`llvm`/`hardened`/`musl`/`musl-llvm`/`musl-hardened`/`musl-llvm-hardened` |
 | `TIMEZONE_SET` | string | e.g. `Europe/Rome` |
 | `LOCALE_GEN_SET` | string | `/etc/locale.gen` entries (newline-separated via `\n`) |
@@ -405,7 +406,6 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 
 - AMD64 / x86_64 only (no ARM64)
 - TPM2 auto-unlock uses `systemd-cryptenroll` (systemd) or `clevis` (OpenRC)
-- Desktop use only (no server-optimized stage3 option)
 - Defaults lean toward Italian locale (`Europe/Rome`, `it_IT`, `it` keymap) — change interactively at wizard prompts
 
 ---
