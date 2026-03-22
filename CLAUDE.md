@@ -278,7 +278,7 @@ CFLAGS       = -march=native -O2      (no -pipe — trades speed for lower memor
 
 Additionally, known memory-heavy packages (LLVM, Rust, binutils, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones. The overrides are created **immediately after make.conf** to ensure they are active for ALL emerge calls in the chroot.
 
-The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile` (including `LD="ld.lld"`); do NOT duplicate them in make.conf. For binutils/binutils-libs, `LD` is overridden to `ld.bfd` via `fix-lld.conf` because lld has incompatibilities with binutils' build system.
+The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile` (including `LD="ld.lld"`); do NOT duplicate them in make.conf. For binutils/binutils-libs, a GCC fallback is used via `compiler-gcc.conf` because the LLVM profile's LDFLAGS (`-fuse-ld=lld -rtlib=compiler-rt`) accumulate at each libtool recursion level in autotools builds → OOM. GCC uses `ld.bfd` by default and never injects `-fuse-ld=lld`.
 
 The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
@@ -345,7 +345,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/etc/portage/binrepos.conf/gentoobinhost.conf` | Binary package repo |
 | `/etc/portage/package.use/*` | Per-package USE flags |
 | `/etc/portage/env/low-memory.conf` | MAKEOPTS=-j1 for heavy packages (LLVM variants only) |
-| `/etc/portage/env/fix-lld.conf` | low-memory + LD=ld.bfd + LDFLAGS stripping for binutils (LLVM variants only) |
+| `/etc/portage/env/compiler-gcc.conf` | GCC fallback (CC=gcc, LD=ld.bfd, clean LDFLAGS) for binutils (LLVM variants only) |
 | `/etc/portage/package.env` | Per-package env overrides (LLVM variants only) |
 | `/etc/portage/package.accept_keywords/pkgs` | `~amd64` keywords |
 | `/etc/portage/repos.conf/gentoo.conf` | Git-based Portage repo config |
