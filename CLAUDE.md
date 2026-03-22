@@ -80,7 +80,8 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 |---|---|---|
 | `HOSTNAME` | string | System hostname |
 | `INIT_SYSTEM` | `systemd`/`openrc` | Init system to install |
-| `INSTALL_TYPE` | `desktop`/`server` | Installation type: desktop includes Plymouth + Wi-Fi tools; server uses stable kernel, no splash, no Wi-Fi tools |
+| `INSTALL_TYPE` | `desktop`/`server` | Installation type: desktop includes Plymouth + Wi-Fi tools; server uses no splash, no Wi-Fi tools |
+| `KERNEL_TESTING` | `y`/`n` | Use `~amd64` testing kernel (`y`) or stable tree only (`n`). Default: `y` for desktop, `n` for server |
 | `INSTALL_VARIANT` | string | `standard`/`llvm`/`hardened`/`musl`/`musl-llvm`/`musl-hardened`/`musl-llvm-hardened` |
 | `TIMEZONE_SET` | string | e.g. `Europe/Rome` |
 | `LOCALE_GEN_SET` | string | `/etc/locale.gen` entries (newline-separated via `\n`) |
