@@ -512,8 +512,6 @@ LOWMEM
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
 LD="ld.bfd"
-LDFLAGS="${LDFLAGS// -fuse-ld=lld/}"
-LDFLAGS="${LDFLAGS// -rtlib=compiler-rt/}"
 FIXLLD
             cat > /etc/portage/package.env <<'PKGENV'
 # Heavy packages that cause OOM with clang at higher parallelism.
