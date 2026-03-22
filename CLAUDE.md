@@ -286,7 +286,7 @@ The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining vari
 - Autotools/libtool detects `LD="ld.lld"` in the environment and generates `-fuse-ld=lld` in every link command it constructs. In binutils' deep recursive sub-makes this accumulates: each level adds another copy → hundreds of duplicate `-fuse-ld=lld` → command-line overflow → OOM
 - **The musl-llvm stage3 has NO GCC** (`llvm-runtimes/libgcc` provides libgcc_s with `RDEPEND="!sys-devel/gcc"`), so `CC="gcc"` fallback approaches are impossible on musl-llvm
 
-**Fix**: `unset LD` in a per-package env for binutils. With LD unset, libtool does not generate `-fuse-ld=lld` — no accumulation. Clang compiled with `default-lld` still uses lld via its built-in default (no explicit flag needed). LDFLAGS is hard-overridden to prevent any residual `-fuse-ld=lld` from env.d files.
+**Fix**: Hard-override LDFLAGS (full replacement, NOT `${LDFLAGS}...` append) and force `MAKEOPTS="-j1"` via a per-package env for binutils. The full LDFLAGS replacement removes any `-fuse-ld=lld` injected by clang-common's env.d. Libtool may still generate `-fuse-ld=lld` once per link command (from LD=ld.lld), but a single occurrence is harmless — lld is used regardless via clang's built-in default. MAKEOPTS=-j1 prevents parallel lld processes from OOMing. Note: Portage env files do NOT support shell builtins (`unset`, `export`, etc.) — only `VAR=VALUE` assignments are valid syntax.
 
 The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
