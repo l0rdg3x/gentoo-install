@@ -237,15 +237,20 @@ This relabels the filesystem, then instructs the user to switch from permissive 
 ### make.conf Defaults
 
 ```
-COMMON_FLAGS="-march=native -O2 -pipe"        # GCC variants (-pipe omitted for LLVM)
+COMMON_FLAGS="-march=native -O2 -pipe [hardened flags] [lto flag]"
+             # GCC variants:  [lto flag] = -flto
+             # LLVM variants: [lto flag] = -flto=thin
 CFLAGS="${COMMON_FLAGS}"
 CXXFLAGS="${COMMON_FLAGS}"
 FCFLAGS="${COMMON_FLAGS}"
 FFLAGS="${COMMON_FLAGS}"
 RUSTFLAGS="${RUSTFLAGS} -C target-cpu=native"
 
-MAKEOPTS="-j${_make_j} -l${_make_j}"      # _make_j = nproc (GCC) or RAM/2GiB (LLVM)
+MAKEOPTS="-j${_make_j} -l${_make_j}"      # _make_j = nproc (GCC) or (RAM-2GiB)/4GiB (LLVM)
 EMERGE_DEFAULT_OPTS="--jobs ${EMERGE_JOBS} --load-average ${_make_j}"
+
+LDFLAGS="${LDFLAGS} -flto"         # GCC: -flto / LLVM: -flto=thin
+
 FEATURES="${FEATURES} candy parallel-fetch parallel-install"
 
 USE="dist-kernel systemd -elogind"     # systemd variant
@@ -257,6 +262,10 @@ VIDEO_CARDS="$VIDEOCARDS"
 LC_MESSAGES=C.utf8
 ```
 
+Toolchain variables appended after the main heredoc:
+- **LLVM variants**: `CC="clang"`, `CXX="clang++"`, `AR="llvm-ar"`, `NM="llvm-nm"`, `RANLIB="llvm-ranlib"`. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile`; do NOT duplicate them in make.conf.
+- **GCC variants**: `AR="gcc-ar"`, `NM="gcc-nm"`, `RANLIB="gcc-ranlib"` — required for the GCC LTO plugin to be visible to binutils at link time.
+
 ### Dynamic Parallel Emerge Jobs
 
 `EMERGE_JOBS` and `MAKEOPTS` are calculated at install time based on available resources. The formula is **variant-aware** because LLVM/Clang uses ~4 GiB per compile thread (vs ~384 MiB for GCC).
@@ -266,6 +275,7 @@ LC_MESSAGES=C.utf8
 effective_mem = RAM + swap / 2         (swap counted at 50%, slower than RAM)
 EMERGE_JOBS  = effective_mem / 384 MiB / nproc   (clamped to [1, nproc])
 MAKEOPTS     = -j$(nproc) -l$(nproc)
+CFLAGS       = -march=native -O2 -pipe -flto
 ```
 
 **LLVM variants (llvm, musl-llvm, musl-llvm-hardened):**
@@ -273,17 +283,22 @@ MAKEOPTS     = -j$(nproc) -l$(nproc)
 EMERGE_JOBS  = 1                       (always — parallel jobs cause OOM because
                                         make -l limits don't coordinate across jobs)
 MAKEOPTS     = -j((RAM - 2 GiB) / 4 GiB)  (clamped to [1, nproc]; 2 GiB reserved for OS)
-CFLAGS       = -march=native -O2      (no -pipe — trades speed for lower memory)
+CFLAGS       = -march=native -O2 -pipe -flto=thin
 ```
-
-Additionally, known memory-heavy packages (LLVM, Rust, browsers) get per-package overrides via `/etc/portage/env/low-memory.conf` forcing `MAKEOPTS="-j1"` and `NINJAOPTS="-j1"`. This two-tier approach keeps most packages fast while preventing OOM on the heaviest ones. The overrides are created **immediately after make.conf** to ensure they are active for ALL emerge calls in the chroot.
-
-The LLVM toolchain sets CC, CXX, AR, NM, RANLIB in make.conf. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile`; do NOT duplicate them in make.conf.
 
 The key insight: `make -l` load limits do NOT coordinate across independent emerge jobs. With GCC this is manageable (low per-thread memory), but with clang, N emerge jobs x M make threads = NxM clang processes x ~4 GiB = OOM freeze. Forcing `EMERGE_JOBS=1` eliminates this entirely.
 
 Examples (GCC): 16GB/12t → `-j12`, 3 emerge jobs. 64GB/16t → `-j16`, 10 emerge jobs.
-Examples (LLVM): 16GB/4t → `-j3`, 1 emerge job (heavy pkgs: `-j1`). 8GB/4t → `-j1`, 1 emerge job.
+Examples (LLVM): 16GB/4t → `-j3`, 1 emerge job. 8GB/4t → `-j1`, 1 emerge job.
+
+### LLVM Toolchain Upgrade (Gentoo bug #965718)
+
+For LLVM variants, immediately after `make.conf` is written, the script:
+
+1. Creates `/etc/portage/package.accept_keywords/llvm-testing` accepting `~amd64` for `llvm-core/*` and `llvm-runtimes/*`
+2. Runs `emerge -uN llvm-core/llvm llvm-core/clang llvm-core/lld` to upgrade to LLVM 22+
+
+**Reason**: `sys-libs/binutils-libs-2.45-r1` OOMs during configure with LLVM 21 (`checking whether compiler driver understands Ada and is recent enough`). LLVM 22+ fixes the Ada check. This emerge runs before any other package installation so that binutils-libs, if pulled as a dependency, sees the fixed compiler.
 
 ---
 
@@ -344,9 +359,8 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/etc/portage/make.conf` | Portage build configuration |
 | `/etc/portage/binrepos.conf/gentoobinhost.conf` | Binary package repo |
 | `/etc/portage/package.use/*` | Per-package USE flags |
-| `/etc/portage/env/low-memory.conf` | MAKEOPTS=-j1 for heavy packages (LLVM variants only) |
-| `/etc/portage/package.env` | Per-package env overrides (LLVM variants only) |
 | `/etc/portage/package.accept_keywords/pkgs` | `~amd64` keywords |
+| `/etc/portage/package.accept_keywords/llvm-testing` | `llvm-core/* ~amd64` — LLVM 22+ workaround for bug #965718 (LLVM variants only) |
 | `/etc/portage/repos.conf/gentoo.conf` | Git-based Portage repo config |
 | `/etc/dracut.conf.d/gentoo.conf` | Initramfs config (hostonly, modules) |
 | `/etc/dracut.conf.d/tpm2.conf` | TPM2 kernel drivers in initramfs |
