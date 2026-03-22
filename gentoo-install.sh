@@ -502,17 +502,25 @@ LLVMCONF
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
 LOWMEM
-            # Fix libtool -fuse-ld=lld infinite recursion: the LLVM profile injects
-            # "-fuse-ld=lld -rtlib=compiler-rt" into LDFLAGS via make.defaults.
-            # In recursive autotools builds (binutils), libtool wraps the compiler
-            # at each nesting level, duplicating these flags hundreds of times
-            # → enormous command line → memory exhaustion.
-            # Override LD to ld.bfd and strip the problematic flags from LDFLAGS.
-            cat > /etc/portage/env/fix-lld.conf <<'FIXLLD'
+            # binutils/binutils-libs cannot be built with clang+lld: the LLVM profile
+            # injects "-fuse-ld=lld -rtlib=compiler-rt" into LDFLAGS, which libtool
+            # duplicates at each level of binutils' recursive autotools build → hundreds
+            # of copies → enormous command line → OOM. Stripping LDFLAGS flags in a
+            # Portage env file is unreliable; the community-standard fix is to build
+            # binutils with GCC (the stage3 bootstrap compiler) instead of clang.
+            cat > /etc/portage/env/compiler-gcc.conf <<'COMPILERGCC'
+CC="gcc"
+CXX="g++"
+LD="ld.bfd"
+AR="ar"
+NM="nm"
+RANLIB="ranlib"
 MAKEOPTS="-j1 -l1"
 NINJAOPTS="-j1"
-LD="ld.bfd"
-FIXLLD
+CFLAGS="-march=native -O2 -pipe"
+CXXFLAGS="-march=native -O2 -pipe"
+LDFLAGS="-Wl,-O1 -Wl,--as-needed"
+COMPILERGCC
             cat > /etc/portage/package.env <<'PKGENV'
 # Heavy packages that cause OOM with clang at higher parallelism.
 # These get MAKEOPTS="-j1" and NINJAOPTS="-j1" via low-memory.conf.
@@ -526,10 +534,10 @@ dev-qt/qtwebengine low-memory.conf
 www-client/firefox low-memory.conf
 www-client/chromium low-memory.conf
 app-office/libreoffice low-memory.conf
-# binutils: use fix-lld.conf (low-memory + LD="ld.bfd" + LDFLAGS stripping)
-# to prevent libtool from accumulating -fuse-ld=lld recursively.
-sys-libs/binutils-libs fix-lld.conf
-sys-devel/binutils fix-lld.conf
+# binutils: use GCC fallback to avoid libtool -fuse-ld=lld recursion in
+# recursive autotools builds. GCC+ld.bfd never injects -fuse-ld=lld.
+sys-libs/binutils-libs compiler-gcc.conf
+sys-devel/binutils compiler-gcc.conf
 PKGENV
             ;;
     esac
