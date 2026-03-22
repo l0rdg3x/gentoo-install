@@ -86,7 +86,13 @@ if [[ "${1:-}" != "--chroot" ]]; then
     ask_radio INSTALL_TYPE "Installation Type" \
         "Select the installation type:" \
         "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools)" "on"  \
-        "server"  "Server   (minimal — no splash, no Wi-Fi tools, stable kernel)" "off"
+        "server"  "Server   (minimal — no splash, no Wi-Fi tools)" "off"
+
+    # ---- Kernel channel ----
+    _kernel_default=$([[ "$INSTALL_TYPE" == "desktop" ]] && echo "y" || echo "n")
+    ask_yesno KERNEL_TESTING "Kernel" \
+        "Use latest kernel (~amd64 testing tree)?\n(No = stable tree only — recommended for servers)" \
+        "$_kernel_default"
 
     # ---- Localization ----
     ask_input TIMEZONE_SET "Localization" \
@@ -312,6 +318,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Hostname        : $HOSTNAME
   Init system     : $INIT_SYSTEM
   Install type    : $INSTALL_TYPE
+  Kernel          : $( [[ "$KERNEL_TESTING" == "y" ]] && echo "latest (~amd64)" || echo "stable" )
   Variant         : $INSTALL_VARIANT
   Timezone        : $TIMEZONE_SET
   Locale          : ${ESELECT_LOCALE_SET:-"(musl — not applicable)"}
@@ -359,7 +366,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     export HOSTNAME TIMEZONE_SET LOCALE_GEN_SET ESELECT_LOCALE_SET CONSOLE_KEYMAP
-    export INIT_SYSTEM INSTALL_TYPE INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
+    export INIT_SYSTEM INSTALL_TYPE KERNEL_TESTING INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
@@ -632,19 +639,19 @@ BINCONF
         > /etc/portage/package.use/kmod
 
     mkdir -p /etc/portage/package.accept_keywords/
-    if [[ "${INSTALL_TYPE:-desktop}" == "server" ]]; then
-        # Server: use stable kernel — no ~amd64 keyword for kernel packages
-        cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
-app-crypt/sbctl ~amd64
-sys-boot/mokutil ~amd64
-KEYWORDS
-    else
+    if [[ "${KERNEL_TESTING:-n}" == "y" ]]; then
         cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
 app-crypt/sbctl ~amd64
 sys-boot/mokutil ~amd64
 sys-kernel/gentoo-kernel-bin ~amd64
 sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
+KEYWORDS
+    else
+        # Stable kernel: no ~amd64 keyword for kernel packages
+        cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
+app-crypt/sbctl ~amd64
+sys-boot/mokutil ~amd64
 KEYWORDS
     fi
 
@@ -1550,6 +1557,7 @@ chroot /mnt/gentoo /usr/bin/env \
     HOSTNAME="$HOSTNAME" \
     INIT_SYSTEM="$INIT_SYSTEM" \
     INSTALL_TYPE="$INSTALL_TYPE" \
+    KERNEL_TESTING="${KERNEL_TESTING:-n}" \
     INSTALL_VARIANT="$INSTALL_VARIANT" \
     TIMEZONE_SET="$TIMEZONE_SET" \
     LOCALE_GEN_SET="$LOCALE_GEN_SET" \

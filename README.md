@@ -55,7 +55,8 @@ The dialog wizard will ask for:
 |---|---|
 | **System** | Hostname |
 | **Init system** | systemd or OpenRC |
-| **Install type** | desktop (Plymouth, Wi-Fi tools, suspend-to-idle) or server (stable kernel, minimal packages) |
+| **Install type** | desktop (Plymouth, Wi-Fi tools, suspend-to-idle) or server (minimal packages, no splash) |
+| **Kernel** | latest (~amd64 testing) or stable; default is latest for desktop, stable for server |
 | **Variant** | standard, llvm, hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened |
 | **Localization** | Timezone, locale, keymap |
 | **Profile** | KDE Plasma / GNOME / Desktop / Minimal (standard desktop); Base / Minimal (standard server); auto-assigned for other variants |
