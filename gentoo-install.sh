@@ -306,21 +306,21 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     # ---- Hardened USE Flags ----
-    if [[ "$INSTALL_TYPE" == "desktop" ]]; then
-        # Desktop uses default compilation flags
-        HARDENED_USE="n"
-    else
-        case "$INSTALL_VARIANT" in
-            hardened|musl-hardened|musl-llvm-hardened)
-                # Hardened variants always include hardened USE flags
-                HARDENED_USE="y"
-                ;;
-            *)
+    case "$INSTALL_VARIANT" in
+        hardened|musl-hardened|musl-llvm-hardened)
+            # Hardened variants always include hardened USE flags
+            HARDENED_USE="y"
+            ;;
+        *)
+            if [[ "$INSTALL_TYPE" == "desktop" ]]; then
+                ask_yesno HARDENED_USE "Hardened USE Flags" \
+                    "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nwithout changing compilation flags or the Portage profile.\n\nThe 23.0 profile already provides vanilla hardening\n(SSP, FORTIFY_SOURCE=2, PIE, stack-clash, RELRO, CET)." "n"
+            else
                 ask_yesno HARDENED_USE "Hardened USE Flags" \
                     "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nand compiler hardening (-fstack-protector-strong, -D_FORTIFY_SOURCE=3,\n-D_GLIBCXX_ASSERTIONS, -fstack-clash-protection) without changing\nthe Portage profile.\n\nRecommended for improved security." "n"
-                ;;
-        esac
-    fi
+            fi
+            ;;
+    esac
 
     # ---- SELinux ----
     if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
@@ -462,7 +462,9 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # ---- Determine variant-specific make.conf values ----
     HARDENED_CFLAGS=""
-    if [[ "$HARDENED_USE" == "y" ]]; then
+    if [[ "$HARDENED_USE" == "y" && "$INSTALL_TYPE" != "desktop" ]]; then
+        # Desktop: USE flags only, no extra CFLAGS (23.0 profile provides vanilla hardening)
+        # Server: USE flags + compiler hardening CFLAGS
         case "$INSTALL_VARIANT" in
             musl-llvm-hardened|musl-llvm)
                 # musl: no FORTIFY_SOURCE (lacks __*_chk wrappers)
