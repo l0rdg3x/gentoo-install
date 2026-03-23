@@ -90,11 +90,20 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools — desktop profiles only)" "on"  \
         "server"  "Server   (no splash, no Wi-Fi tools — all profiles available)"       "off"
 
+    # ---- Testing branch ----
+    ask_yesno TESTING_FULL "Testing Branch" \
+        "Use a fully testing system (*/* ~amd64)?\n\nAll packages will use the testing tree.\nThis gives you the latest software but may be less stable.\n\nOnly recommended for experienced users." "n"
+
     # ---- Kernel channel ----
-    _kernel_default=$([[ "$INSTALL_TYPE" == "desktop" ]] && echo "y" || echo "n")
-    ask_yesno KERNEL_TESTING "Kernel" \
-        "Use latest kernel (~amd64 testing tree)?\n(No = stable tree only — recommended for servers)" \
-        "$_kernel_default"
+    if [[ "$TESTING_FULL" == "y" ]]; then
+        # Full testing already implies testing kernel
+        KERNEL_TESTING="y"
+    else
+        _kernel_default=$([[ "$INSTALL_TYPE" == "desktop" ]] && echo "y" || echo "n")
+        ask_yesno KERNEL_TESTING "Kernel" \
+            "Use latest kernel (~amd64 testing tree)?\n(No = stable tree only — recommended for servers)" \
+            "$_kernel_default"
+    fi
 
     # ---- Localization ----
     ask_input TIMEZONE_SET "Localization" \
@@ -346,6 +355,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Hostname        : $HOSTNAME
   Init system     : $INIT_SYSTEM
   Install type    : $INSTALL_TYPE
+  Testing         : $( [[ "$TESTING_FULL" == "y" ]] && echo "full (*/* ~amd64)" || echo "no" )
   Kernel          : $( [[ "$KERNEL_TESTING" == "y" ]] && echo "latest (~amd64)" || echo "stable" )
   Variant         : $INSTALL_VARIANT
   Timezone        : $TIMEZONE_SET
@@ -395,7 +405,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     export HOSTNAME TIMEZONE_SET LOCALE_GEN_SET ESELECT_LOCALE_SET CONSOLE_KEYMAP
-    export INIT_SYSTEM INSTALL_TYPE KERNEL_TESTING INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
+    export INIT_SYSTEM INSTALL_TYPE TESTING_FULL KERNEL_TESTING INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
@@ -668,7 +678,10 @@ BINCONF
         > /etc/portage/package.use/kmod
 
     mkdir -p /etc/portage/package.accept_keywords/
-    if [[ "${KERNEL_TESTING:-n}" == "y" ]]; then
+    if [[ "${TESTING_FULL:-n}" == "y" ]]; then
+        # Full testing: accept ~amd64 for all packages
+        echo "*/* ~amd64" > /etc/portage/package.accept_keywords/testing
+    elif [[ "${KERNEL_TESTING:-n}" == "y" ]]; then
         cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
 app-crypt/sbctl ~amd64
 sys-boot/mokutil ~amd64
@@ -1584,6 +1597,7 @@ chroot /mnt/gentoo /usr/bin/env \
     HOSTNAME="$HOSTNAME" \
     INIT_SYSTEM="$INIT_SYSTEM" \
     INSTALL_TYPE="$INSTALL_TYPE" \
+    TESTING_FULL="${TESTING_FULL:-n}" \
     KERNEL_TESTING="${KERNEL_TESTING:-n}" \
     INSTALL_VARIANT="$INSTALL_VARIANT" \
     TIMEZONE_SET="$TIMEZONE_SET" \
