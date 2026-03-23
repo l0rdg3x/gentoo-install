@@ -707,8 +707,8 @@ sys-boot/mokutil ~amd64
 KEYWORDS
     fi
 
-    # Hardened (glibc+GCC) variant needs testing GRUB
-    if [[ "$INSTALL_VARIANT" == "hardened" && "${TESTING_FULL:-n}" != "y" ]]; then
+    # Hardened USE flags need testing GRUB
+    if [[ "${HARDENED_USE:-n}" == "y" && "${TESTING_FULL:-n}" != "y" ]]; then
         echo "sys-boot/grub ~amd64" >> /etc/portage/package.accept_keywords/pkgs
     fi
 
