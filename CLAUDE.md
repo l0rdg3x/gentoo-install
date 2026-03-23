@@ -81,7 +81,8 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `HOSTNAME` | string | System hostname |
 | `INIT_SYSTEM` | `systemd`/`openrc` | Init system to install |
 | `INSTALL_TYPE` | `desktop`/`server` | Installation type: desktop includes Plymouth + Wi-Fi tools; server uses no splash, no Wi-Fi tools |
-| `KERNEL_TESTING` | `y`/`n` | Use `~amd64` testing kernel (`y`) or stable tree only (`n`). Default: `y` for desktop, `n` for server |
+| `TESTING_FULL` | `y`/`n` | Use fully testing system (`*/* ~amd64`). When `y`, `KERNEL_TESTING` is auto-set to `y` and the kernel dialog is skipped |
+| `KERNEL_TESTING` | `y`/`n` | Use `~amd64` testing kernel (`y`) or stable tree only (`n`). Default: `y` for desktop, `n` for server. Auto-set to `y` if `TESTING_FULL=y` |
 | `INSTALL_VARIANT` | string | `standard`/`llvm`/`hardened`/`musl`/`musl-llvm`/`musl-hardened`/`musl-llvm-hardened` |
 | `TIMEZONE_SET` | string | e.g. `Europe/Rome` |
 | `LOCALE_GEN_SET` | string | `/etc/locale.gen` entries (newline-separated via `\n`) |
@@ -106,6 +107,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `MOK_PASS` | string | MOK enrollment password |
 | `GRUB_PASSWORD_ENABLE` | `y`/`n` | Protect GRUB menu with password |
 | `GRUB_PASS` | string | GRUB boot menu password (only set if `GRUB_PASSWORD_ENABLE=y`) |
+| `HARDENED_USE` | `y`/`n` | Enable hardened USE flags (`hardened pie ssp`) and compiler hardening CFLAGS. Auto-set to `y` for hardened variants; optional for all others |
 | `SELINUX` | `y`/`n` | Enable SELinux (only available with `hardened` variant) |
 | `SELINUX_TYPE` | `targeted`/`strict`/`mls` | SELinux policy type (only set if `SELINUX=y`) |
 | `ROOT_PASS` | string | Root account password |

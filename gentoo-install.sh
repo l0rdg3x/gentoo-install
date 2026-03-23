@@ -90,11 +90,20 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools — desktop profiles only)" "on"  \
         "server"  "Server   (no splash, no Wi-Fi tools — all profiles available)"       "off"
 
+    # ---- Testing branch ----
+    ask_yesno TESTING_FULL "Testing Branch" \
+        "Use a fully testing system (*/* ~amd64)?\n\nAll packages will use the testing tree.\nThis gives you the latest software but may be less stable.\n\nOnly recommended for experienced users." "n"
+
     # ---- Kernel channel ----
-    _kernel_default=$([[ "$INSTALL_TYPE" == "desktop" ]] && echo "y" || echo "n")
-    ask_yesno KERNEL_TESTING "Kernel" \
-        "Use latest kernel (~amd64 testing tree)?\n(No = stable tree only — recommended for servers)" \
-        "$_kernel_default"
+    if [[ "$TESTING_FULL" == "y" ]]; then
+        # Full testing already implies testing kernel
+        KERNEL_TESTING="y"
+    else
+        _kernel_default=$([[ "$INSTALL_TYPE" == "desktop" ]] && echo "y" || echo "n")
+        ask_yesno KERNEL_TESTING "Kernel" \
+            "Use latest kernel (~amd64 testing tree)?\n(No = stable tree only — recommended for servers)" \
+            "$_kernel_default"
+    fi
 
     # ---- Localization ----
     ask_input TIMEZONE_SET "Localization" \
@@ -296,6 +305,18 @@ if [[ "${1:-}" != "--chroot" ]]; then
         GRUB_PASS=""
     fi
 
+    # ---- Hardened USE Flags ----
+    case "$INSTALL_VARIANT" in
+        hardened|musl-hardened|musl-llvm-hardened)
+            # Hardened variants always include hardened USE flags
+            HARDENED_USE="y"
+            ;;
+        *)
+            ask_yesno HARDENED_USE "Hardened USE Flags" \
+                "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nand compiler hardening (-fstack-protector-strong, -D_FORTIFY_SOURCE=2)\nwithout changing the Portage profile.\n\nRecommended for improved security." "n"
+            ;;
+    esac
+
     # ---- SELinux ----
     if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
         ask_yesno SELINUX "SELinux" \
@@ -334,6 +355,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Hostname        : $HOSTNAME
   Init system     : $INIT_SYSTEM
   Install type    : $INSTALL_TYPE
+  Testing         : $( [[ "$TESTING_FULL" == "y" ]] && echo "full (*/* ~amd64)" || echo "no" )
   Kernel          : $( [[ "$KERNEL_TESTING" == "y" ]] && echo "latest (~amd64)" || echo "stable" )
   Variant         : $INSTALL_VARIANT
   Timezone        : $TIMEZONE_SET
@@ -350,6 +372,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Intel microcode : $INTEL_CPU_MICROCODE
   Plymouth theme  : $PLYMOUTH_THEME_SET
   Secure Boot     : $SECUREBOOT_MODSIGN
+  Hardened USE    : $HARDENED_USE
   SELinux         : $SELINUX $( [[ "$SELINUX" == "y" ]] && echo "($SELINUX_TYPE)" || true )
   Grub Password   : $GRUB_PASSWORD_ENABLE
 
@@ -382,7 +405,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     export HOSTNAME TIMEZONE_SET LOCALE_GEN_SET ESELECT_LOCALE_SET CONSOLE_KEYMAP
-    export INIT_SYSTEM INSTALL_TYPE KERNEL_TESTING INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
+    export INIT_SYSTEM INSTALL_TYPE TESTING_FULL KERNEL_TESTING INSTALL_VARIANT ESELECT_PROF DISK_INSTALL DEV_INSTALL EFI_PART ROOT_PART
     export SWAP_G LUKSED LUKS_PASS BINHOST BINHOST_V3 MIRROR
     export VIDEOCARDS INTEL_CPU_MICROCODE PLYMOUTH_THEME_SET
     export SECUREBOOT_MODSIGN MOK_PASS ROOT_PASS USER_NAME USER_PASS TPM_UNLOCK
@@ -434,16 +457,18 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # ---- Determine variant-specific make.conf values ----
     HARDENED_CFLAGS=""
-    case "$INSTALL_VARIANT" in
-        hardened)
-            HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
-            ;;
-        musl-hardened|musl-llvm-hardened)
-            # musl does not implement glibc's __*_chk wrappers, so
-            # _FORTIFY_SOURCE has no effect — only use -fstack-protector-strong
-            HARDENED_CFLAGS=" -fstack-protector-strong"
-            ;;
-    esac
+    if [[ "$HARDENED_USE" == "y" ]]; then
+        case "$INSTALL_VARIANT" in
+            musl|musl-llvm|musl-hardened|musl-llvm-hardened)
+                # musl does not implement glibc's __*_chk wrappers, so
+                # _FORTIFY_SOURCE has no effect — only use -fstack-protector-strong
+                HARDENED_CFLAGS=" -fstack-protector-strong"
+                ;;
+            *)
+                HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
+                ;;
+        esac
+    fi
 
     # C.utf8 locale is provided by glibc; musl only supports C/POSIX
     case "$INSTALL_VARIANT" in
@@ -566,11 +591,9 @@ GCCLTOCONF
     EXTRA_FEATURES=""
 
     # Hardened USE flags
-    case "$INSTALL_VARIANT" in
-        hardened|musl-hardened|musl-llvm-hardened)
-            EXTRA_USE+=" hardened pie ssp"
-            ;;
-    esac
+    if [[ "$HARDENED_USE" == "y" ]]; then
+        EXTRA_USE+=" hardened pie ssp"
+    fi
 
     # SELinux USE flags
     if [[ "${SELINUX:-n}" == "y" ]]; then
@@ -655,7 +678,10 @@ BINCONF
         > /etc/portage/package.use/kmod
 
     mkdir -p /etc/portage/package.accept_keywords/
-    if [[ "${KERNEL_TESTING:-n}" == "y" ]]; then
+    if [[ "${TESTING_FULL:-n}" == "y" ]]; then
+        # Full testing: accept ~amd64 for all packages
+        echo "*/* ~amd64" > /etc/portage/package.accept_keywords/testing
+    elif [[ "${KERNEL_TESTING:-n}" == "y" ]]; then
         cat > /etc/portage/package.accept_keywords/pkgs <<KEYWORDS
 app-crypt/sbctl ~amd64
 sys-boot/mokutil ~amd64
@@ -679,12 +705,10 @@ KEYWORDS
     fi
 
     # Hardened kernel USE flag
-    case "$INSTALL_VARIANT" in
-        hardened|musl-hardened|musl-llvm-hardened)
-            echo "sys-kernel/gentoo-kernel hardened" \
-                > /etc/portage/package.use/kernel-hardened
-            ;;
-    esac
+    if [[ "$HARDENED_USE" == "y" ]]; then
+        echo "sys-kernel/gentoo-kernel hardened" \
+            > /etc/portage/package.use/kernel-hardened
+    fi
 
     # SELinux kernel USE flag
     if [[ "${SELINUX:-n}" == "y" ]]; then
@@ -1573,6 +1597,7 @@ chroot /mnt/gentoo /usr/bin/env \
     HOSTNAME="$HOSTNAME" \
     INIT_SYSTEM="$INIT_SYSTEM" \
     INSTALL_TYPE="$INSTALL_TYPE" \
+    TESTING_FULL="${TESTING_FULL:-n}" \
     KERNEL_TESTING="${KERNEL_TESTING:-n}" \
     INSTALL_VARIANT="$INSTALL_VARIANT" \
     TIMEZONE_SET="$TIMEZONE_SET" \
@@ -1601,6 +1626,7 @@ chroot /mnt/gentoo /usr/bin/env \
     USER_PASS="$USER_PASS" \
     GRUB_PASSWORD_ENABLE="${GRUB_PASSWORD_ENABLE:-n}" \
     GRUB_PASS="${GRUB_PASS:-}" \
+    HARDENED_USE="${HARDENED_USE:-n}" \
     SELINUX="${SELINUX:-n}" \
     SELINUX_TYPE="${SELINUX_TYPE:-}" \
     /bin/bash /gentoo-install.sh --chroot
