@@ -111,7 +111,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `MOK_PASS` | string | MOK enrollment password |
 | `GRUB_PASSWORD_ENABLE` | `y`/`n` | Protect GRUB menu with password |
 | `GRUB_PASS` | string | GRUB boot menu password (only set if `GRUB_PASSWORD_ENABLE=y`) |
-| `HARDENED_USE` | `y`/`n` | Enable hardened USE flags (`hardened pie ssp`) and compiler hardening CFLAGS (`-fstack-protector-strong`, `-D_FORTIFY_SOURCE=3`, `-D_GLIBCXX_ASSERTIONS`, `-fstack-clash-protection`; musl/LLVM variants omit inapplicable flags). Auto-set to `y` for hardened variants; optional for all others |
+| `HARDENED_USE` | `y`/`n` | Enable hardened USE flags (`hardened pie ssp`). **Desktop**: USE flags only, no extra CFLAGS (23.0 profile provides vanilla hardening). **Server**: also adds compiler hardening CFLAGS (`-fstack-protector-strong`, `-D_FORTIFY_SOURCE=3`, `-D_GLIBCXX_ASSERTIONS`, `-fstack-clash-protection`; musl/LLVM variants omit inapplicable flags). Auto-set to `y` for hardened variants; optional for all others |
 | `SELINUX` | `y`/`n` | Enable SELinux (only available with `hardened` variant) |
 | `SELINUX_TYPE` | `targeted`/`strict`/`mls` | SELinux policy type (only set if `SELINUX=y`) |
 | `ROOT_PASS` | string | Root account password |
@@ -270,9 +270,9 @@ VIDEO_CARDS="$VIDEOCARDS"
 LC_MESSAGES=C.utf8
 ```
 
-### Hardened CFLAGS by Variant (when `HARDENED_USE=y`)
+### Hardened CFLAGS by Variant (server only, when `HARDENED_USE=y`)
 
-All variants with `HARDENED_USE=y` receive the full Gentoo Hardened toolchain flags, adapted per C library and compiler:
+Server installs with `HARDENED_USE=y` receive the full Gentoo Hardened toolchain flags, adapted per C library and compiler. Desktop installs with `HARDENED_USE=y` only get the USE flags (`hardened pie ssp`) — no extra CFLAGS are added, as the 23.0 profile already provides vanilla hardening (SSP, FORTIFY_SOURCE=2, PIE, stack-clash-protection, RELRO, CET):
 
 | Variant group | Hardened CFLAGS |
 |---|---|
