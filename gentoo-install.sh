@@ -707,9 +707,21 @@ sys-boot/mokutil ~amd64
 KEYWORDS
     fi
 
-    # Hardened USE flags need testing GRUB
-    if [[ "${HARDENED_USE:-n}" == "y" && "${TESTING_FULL:-n}" != "y" ]]; then
-        echo "sys-boot/grub ~amd64" >> /etc/portage/package.accept_keywords/pkgs
+    # GRUB does not compile with FORTIFY_SOURCE=3; downgrade to 2
+    if [[ "${HARDENED_USE:-n}" == "y" ]]; then
+        case "$INSTALL_VARIANT" in
+            musl|musl-llvm|musl-hardened|musl-llvm-hardened)
+                ;; # musl has no FORTIFY_SOURCE — nothing to override
+            *)
+                mkdir -p /etc/portage/env /etc/portage/package.env
+                cat > /etc/portage/env/fortify2.conf <<'ENVGRUB'
+CFLAGS="${CFLAGS//-D_FORTIFY_SOURCE=3/-D_FORTIFY_SOURCE=2}"
+CXXFLAGS="${CXXFLAGS//-D_FORTIFY_SOURCE=3/-D_FORTIFY_SOURCE=2}"
+ENVGRUB
+                echo "sys-boot/grub fortify2.conf" \
+                    > /etc/portage/package.env/grub
+                ;;
+        esac
     fi
 
     echo "[*] [CHROOT] Installing sbctl and generating MOK keys"
