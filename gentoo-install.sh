@@ -296,6 +296,18 @@ if [[ "${1:-}" != "--chroot" ]]; then
         GRUB_PASS=""
     fi
 
+    # ---- Hardened USE Flags ----
+    case "$INSTALL_VARIANT" in
+        hardened|musl-hardened|musl-llvm-hardened)
+            # Hardened variants always include hardened USE flags
+            HARDENED_USE="y"
+            ;;
+        *)
+            ask_yesno HARDENED_USE "Hardened USE Flags" \
+                "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nand compiler hardening (-fstack-protector-strong, -D_FORTIFY_SOURCE=2)\nwithout changing the Portage profile.\n\nRecommended for improved security." "n"
+            ;;
+    esac
+
     # ---- SELinux ----
     if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
         ask_yesno SELINUX "SELinux" \
@@ -350,6 +362,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
   Intel microcode : $INTEL_CPU_MICROCODE
   Plymouth theme  : $PLYMOUTH_THEME_SET
   Secure Boot     : $SECUREBOOT_MODSIGN
+  Hardened USE    : $HARDENED_USE
   SELinux         : $SELINUX $( [[ "$SELINUX" == "y" ]] && echo "($SELINUX_TYPE)" || true )
   Grub Password   : $GRUB_PASSWORD_ENABLE
 
@@ -434,16 +447,18 @@ if [[ "${1:-}" == "--chroot" ]]; then
 
     # ---- Determine variant-specific make.conf values ----
     HARDENED_CFLAGS=""
-    case "$INSTALL_VARIANT" in
-        hardened)
-            HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
-            ;;
-        musl-hardened|musl-llvm-hardened)
-            # musl does not implement glibc's __*_chk wrappers, so
-            # _FORTIFY_SOURCE has no effect — only use -fstack-protector-strong
-            HARDENED_CFLAGS=" -fstack-protector-strong"
-            ;;
-    esac
+    if [[ "$HARDENED_USE" == "y" ]]; then
+        case "$INSTALL_VARIANT" in
+            musl|musl-llvm|musl-hardened|musl-llvm-hardened)
+                # musl does not implement glibc's __*_chk wrappers, so
+                # _FORTIFY_SOURCE has no effect — only use -fstack-protector-strong
+                HARDENED_CFLAGS=" -fstack-protector-strong"
+                ;;
+            *)
+                HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
+                ;;
+        esac
+    fi
 
     # C.utf8 locale is provided by glibc; musl only supports C/POSIX
     case "$INSTALL_VARIANT" in
@@ -566,11 +581,9 @@ GCCLTOCONF
     EXTRA_FEATURES=""
 
     # Hardened USE flags
-    case "$INSTALL_VARIANT" in
-        hardened|musl-hardened|musl-llvm-hardened)
-            EXTRA_USE+=" hardened pie ssp"
-            ;;
-    esac
+    if [[ "$HARDENED_USE" == "y" ]]; then
+        EXTRA_USE+=" hardened pie ssp"
+    fi
 
     # SELinux USE flags
     if [[ "${SELINUX:-n}" == "y" ]]; then
@@ -679,12 +692,10 @@ KEYWORDS
     fi
 
     # Hardened kernel USE flag
-    case "$INSTALL_VARIANT" in
-        hardened|musl-hardened|musl-llvm-hardened)
-            echo "sys-kernel/gentoo-kernel hardened" \
-                > /etc/portage/package.use/kernel-hardened
-            ;;
-    esac
+    if [[ "$HARDENED_USE" == "y" ]]; then
+        echo "sys-kernel/gentoo-kernel hardened" \
+            > /etc/portage/package.use/kernel-hardened
+    fi
 
     # SELinux kernel USE flag
     if [[ "${SELINUX:-n}" == "y" ]]; then
@@ -1601,6 +1612,7 @@ chroot /mnt/gentoo /usr/bin/env \
     USER_PASS="$USER_PASS" \
     GRUB_PASSWORD_ENABLE="${GRUB_PASSWORD_ENABLE:-n}" \
     GRUB_PASS="${GRUB_PASS:-}" \
+    HARDENED_USE="${HARDENED_USE:-n}" \
     SELINUX="${SELINUX:-n}" \
     SELINUX_TYPE="${SELINUX_TYPE:-}" \
     /bin/bash /gentoo-install.sh --chroot

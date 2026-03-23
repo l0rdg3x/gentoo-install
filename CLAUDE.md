@@ -106,6 +106,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `MOK_PASS` | string | MOK enrollment password |
 | `GRUB_PASSWORD_ENABLE` | `y`/`n` | Protect GRUB menu with password |
 | `GRUB_PASS` | string | GRUB boot menu password (only set if `GRUB_PASSWORD_ENABLE=y`) |
+| `HARDENED_USE` | `y`/`n` | Enable hardened USE flags (`hardened pie ssp`) and compiler hardening CFLAGS. Auto-set to `y` for hardened variants; optional for all others |
 | `SELINUX` | `y`/`n` | Enable SELinux (only available with `hardened` variant) |
 | `SELINUX_TYPE` | `targeted`/`strict`/`mls` | SELinux policy type (only set if `SELINUX=y`) |
 | `ROOT_PASS` | string | Root account password |
