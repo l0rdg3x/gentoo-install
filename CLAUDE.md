@@ -107,7 +107,7 @@ All configuration is collected in Section 1 and exported for the chroot. Boolean
 | `MOK_PASS` | string | MOK enrollment password |
 | `GRUB_PASSWORD_ENABLE` | `y`/`n` | Protect GRUB menu with password |
 | `GRUB_PASS` | string | GRUB boot menu password (only set if `GRUB_PASSWORD_ENABLE=y`) |
-| `HARDENED_USE` | `y`/`n` | Enable hardened USE flags (`hardened pie ssp`) and compiler hardening CFLAGS. Auto-set to `y` for hardened variants; optional for all others |
+| `HARDENED_USE` | `y`/`n` | Enable hardened USE flags (`hardened pie ssp`) and compiler hardening CFLAGS (`-fstack-protector-strong`, `-D_FORTIFY_SOURCE=3`, `-D_GLIBCXX_ASSERTIONS`, `-fstack-clash-protection`; musl/LLVM variants omit inapplicable flags). Auto-set to `y` for hardened variants; optional for all others |
 | `SELINUX` | `y`/`n` | Enable SELinux (only available with `hardened` variant) |
 | `SELINUX_TYPE` | `targeted`/`strict`/`mls` | SELinux policy type (only set if `SELINUX=y`) |
 | `ROOT_PASS` | string | Root account password |
@@ -265,6 +265,20 @@ GRUB_PLATFORMS="efi-64"
 VIDEO_CARDS="$VIDEOCARDS"
 LC_MESSAGES=C.utf8
 ```
+
+### Hardened CFLAGS by Variant (when `HARDENED_USE=y`)
+
+All variants with `HARDENED_USE=y` receive the full Gentoo Hardened toolchain flags, adapted per C library and compiler:
+
+| Variant group | Hardened CFLAGS |
+|---|---|
+| glibc variants (`standard`, `llvm`, `hardened`) | `-fstack-protector-strong -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection` |
+| musl+GCC variants (`musl`, `musl-hardened`) | `-fstack-protector-strong -D_GLIBCXX_ASSERTIONS -fstack-clash-protection` |
+| musl+LLVM variants (`musl-llvm`, `musl-llvm-hardened`) | `-fstack-protector-strong -fstack-clash-protection` |
+
+Flags omitted per variant:
+- **`-D_FORTIFY_SOURCE=3`**: musl lacks `__*_chk()` runtime wrappers, so `_FORTIFY_SOURCE` has no effect
+- **`-D_GLIBCXX_ASSERTIONS`**: LLVM variants use libc++ (not libstdc++), so `_GLIBCXX_ASSERTIONS` is inapplicable
 
 Toolchain variables appended after the main heredoc:
 - **LLVM variants**: `CC="clang"`, `CXX="clang++"`, `AR="llvm-ar"`, `NM="llvm-nm"`, `RANLIB="llvm-ranlib"`. The remaining variables (LD, AS, CPP, STRIP, OBJCOPY, OBJDUMP, READELF, STRINGS, ADDR2LINE) are provided by the Gentoo LLVM profile via `eselect profile`; do NOT duplicate them in make.conf.

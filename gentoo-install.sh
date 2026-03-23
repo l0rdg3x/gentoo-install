@@ -313,7 +313,7 @@ if [[ "${1:-}" != "--chroot" ]]; then
             ;;
         *)
             ask_yesno HARDENED_USE "Hardened USE Flags" \
-                "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nand compiler hardening (-fstack-protector-strong, -D_FORTIFY_SOURCE=2)\nwithout changing the Portage profile.\n\nRecommended for improved security." "n"
+                "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nand compiler hardening (-fstack-protector-strong, -D_FORTIFY_SOURCE=3,\n-D_GLIBCXX_ASSERTIONS, -fstack-clash-protection) without changing\nthe Portage profile.\n\nRecommended for improved security." "n"
             ;;
     esac
 
@@ -459,13 +459,20 @@ if [[ "${1:-}" == "--chroot" ]]; then
     HARDENED_CFLAGS=""
     if [[ "$HARDENED_USE" == "y" ]]; then
         case "$INSTALL_VARIANT" in
-            musl|musl-llvm|musl-hardened|musl-llvm-hardened)
-                # musl does not implement glibc's __*_chk wrappers, so
-                # _FORTIFY_SOURCE has no effect — only use -fstack-protector-strong
-                HARDENED_CFLAGS=" -fstack-protector-strong"
+            musl-llvm-hardened|musl-llvm)
+                # musl: no FORTIFY_SOURCE (lacks __*_chk wrappers)
+                # LLVM: no GLIBCXX_ASSERTIONS (uses libc++, not libstdc++)
+                HARDENED_CFLAGS=" -fstack-protector-strong -fstack-clash-protection"
+                ;;
+            musl|musl-hardened)
+                # musl: no FORTIFY_SOURCE (lacks __*_chk wrappers)
+                # GCC: GLIBCXX_ASSERTIONS works (libstdc++)
+                HARDENED_CFLAGS=" -fstack-protector-strong -D_GLIBCXX_ASSERTIONS -fstack-clash-protection"
                 ;;
             *)
-                HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2"
+                # glibc: full hardened profile CFLAGS
+                # FORTIFY_SOURCE=3, GLIBCXX_ASSERTIONS, stack-clash-protection
+                HARDENED_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection"
                 ;;
         esac
     fi
