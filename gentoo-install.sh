@@ -695,6 +695,9 @@ sys-boot/mokutil ~amd64
 sys-kernel/gentoo-kernel-bin ~amd64
 sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
+sys-kernel/linux-firmware ~amd64
+sys-firmware/sof-firmware ~amd64
+sys-firmware/intel-microcode ~amd64
 KEYWORDS
     else
         # Stable kernel: no ~amd64 keyword for kernel packages
@@ -702,6 +705,11 @@ KEYWORDS
 app-crypt/sbctl ~amd64
 sys-boot/mokutil ~amd64
 KEYWORDS
+    fi
+
+    # Hardened (glibc+GCC) variant needs testing GRUB
+    if [[ "$INSTALL_VARIANT" == "hardened" && "${TESTING_FULL:-n}" != "y" ]]; then
+        echo "sys-boot/grub ~amd64" >> /etc/portage/package.accept_keywords/pkgs
     fi
 
     echo "[*] [CHROOT] Installing sbctl and generating MOK keys"
