@@ -14,7 +14,7 @@ This is a single-file Bash script (`gentoo-install.sh`) that automates Gentoo Li
 
 ```
 gentoo-install/
-├── gentoo-install.sh   # The entire installer (~1470 lines, single script)
+├── gentoo-install.sh   # The entire installer (~1640 lines, single script)
 ├── README.md           # User-facing documentation
 └── LICENSE             # GPLv3
 ```
@@ -27,25 +27,29 @@ There is no build system, no test suite, no CI/CD, and no separate config files.
 
 The script has **four logical sections**, controlled by a `--chroot` argument guard:
 
-### Section 1: Dialog Config Wizard (lines 14–343)
+### Section 1: Dialog Config Wizard (lines 14–413)
 Runs on the **live host** (no `--chroot` flag). Uses the `dialog` TUI to collect all installation parameters interactively, then exports them as environment variables.
 
 Four helper functions drive all dialogs:
 - `ask_input VAR "Title" "Prompt" "default"` — text input box
 - `ask_pass VAR "Title" "Prompt"` — password box (hidden input)
 - `ask_yesno VAR "Title" "Prompt" default_y_or_n` — yes/no dialog
-- `ask_radio VAR "Title" "Prompt" tag item on|off ...` — single-choice radiolist
+- `ask_radio VAR "Title" "Prompt" [width] tag item on|off ...` — single-choice radiolist (optional `width` integer as 4th arg, default 72)
 
-### Section 1b: Pre-Installation Checks (lines 1277–1324)
+**Behavioral notes**:
+- Desktop installs (`INSTALL_TYPE=desktop`) force `INSTALL_VARIANT=standard` silently — non-standard variants (LLVM, hardened, musl) are only available for server installs.
+- musl variants automatically switch `INIT_SYSTEM` to `openrc` if `systemd` was selected (systemd requires glibc).
+
+### Section 1b: Pre-Installation Checks (lines 1434–1479)
 Runs on the **live host** after the dialog wizard confirms. Validates root privileges, UEFI boot mode, target disk existence, disk not mounted, required tools availability, and network/mirror connectivity before any destructive operation. Critical failures exit immediately; warnings (swap size, hostname format) are printed but do not block installation.
 
-### Section 2: Chroot Section (lines 345–1275)
+### Section 2: Chroot Section (lines 418–1431)
 Runs **inside the chroot** (triggered by `--chroot` flag). Configures the new Gentoo system: Portage, profile, make.conf, packages, bootloader, users, and post-install scripts.
 
-### Section 3: Host (Pre-Chroot) Section (lines 1325–1472)
+### Section 3: Host (Pre-Chroot) Section (lines 1481–1640)
 Runs on the **live host** after pre-installation checks pass. Handles disk operations: wipe, GPT partitioning, optional LUKS formatting, Btrfs formatting and subvolume creation, swap file setup, stage3 download/extraction, and chroot entry.
 
-**Note**: The script copies itself from `/root/gentoo-install.sh` into the chroot (line 1437), not from the current directory.
+**Note**: The script copies itself from `/root/gentoo-install.sh` into the chroot (line 1600), not from the current directory.
 
 ---
 
@@ -432,7 +436,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 ## Development Notes
 
 - The script is intentionally monolithic — resist splitting it unless there is a strong reason. The single-file design is a deliberate choice for portability during live-CD installation.
-- The chroot hand-off passes every variable explicitly via `/usr/bin/env VAR=value ...` on the `chroot` command line. If you add a new configuration variable, add it to both the `export` block (lines 337–342) and the `chroot` invocation (lines 1440–1472).
+- The chroot hand-off passes every variable explicitly via `/usr/bin/env VAR=value ...` on the `chroot` command line. If you add a new configuration variable, add it to both the `export` block (lines 407–412) and the `chroot` invocation (lines 1603–1639).
 - `grub-install` must NOT be used — it produces an unsigned binary incompatible with the shim-based Secure Boot chain.
 - TPM2 enrollment scripts that use `systemd-cryptenroll` cannot run during chroot because PCR values are not valid until a real boot occurs.
 - When writing config files with heredocs that contain bash variables from the install context, use `<<DELIMITER` (unquoted). When writing scripts that should be literal bash on the installed system, use `<<'DELIMITER'` (quoted).
