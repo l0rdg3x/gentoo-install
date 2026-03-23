@@ -56,8 +56,9 @@ The dialog wizard will ask for:
 | **System** | Hostname |
 | **Init system** | systemd or OpenRC |
 | **Install type** | desktop (Plymouth, Wi-Fi tools, suspend-to-idle) or server (minimal packages, no splash) |
-| **Kernel** | latest (~amd64 testing) or stable; default is latest for desktop, stable for server |
-| **Variant** | standard, llvm, hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened |
+| **Testing** | Full testing system (`*/* ~amd64`) — all packages use testing tree (optional) |
+| **Kernel** | latest (~amd64 testing) or stable; default is latest for desktop, stable for server; auto-set to latest if full testing enabled |
+| **Variant** | standard, llvm, hardened, musl, musl-llvm, musl-hardened, musl-llvm-hardened (server only for non-standard) |
 | **Localization** | Timezone, locale, keymap |
 | **Profile** | KDE Plasma / GNOME / Desktop / Minimal (standard desktop); Base / Minimal (standard server); auto-assigned for other variants |
 | **Portage** | Binary packages (y/n, standard variant only), x86-64-v3 binaries (y/n), mirror URL |
@@ -65,6 +66,7 @@ The dialog wizard will ask for:
 | **Encryption** | LUKS (y/n), passphrase, TPM2 unlock (y/n) |
 | **Hardware** | VIDEO_CARDS, Intel microcode (y/n) |
 | **Boot** | Plymouth theme (desktop only), Secure Boot (y/n), MOK password, GRUB password (y/n) |
+| **Hardened** | Hardened USE flags (y/n, auto-enabled for hardened variants; optional for others) |
 | **SELinux** | Enable (y/n, hardened variant only), policy type (targeted/strict/mls) |
 | **Users** | Root password, non-root username and password |
 
@@ -85,7 +87,7 @@ After confirmation, the script runs unattended through two phases:
 **Chroot phase** (automatic):
 1. Syncs Portage and sets the selected profile (including SELinux sub-profile if enabled)
 2. Selects best mirrors via `mirrorselect`
-3. Generates `make.conf` with native CPU flags, LTO, parallel build settings, and variant-specific flags (hardened CFLAGS, LLVM toolchain, SELinux USE flags). For LLVM variants: upgrades LLVM toolchain to v22+ immediately (workaround for Gentoo bug #965718)
+3. Generates `make.conf` with native CPU flags, LTO, parallel build settings, and variant-specific flags (hardened CFLAGS, LLVM toolchain, SELinux USE flags)
 4. Configures binary package repository (standard variant only)
 5. Sets locale, timezone, and keymap
 6. Installs kernel (binary or source-based), firmware, and microcode
@@ -223,9 +225,11 @@ The installer supports 7 installation variants. The **standard** variant is reco
 | `musl` | GCC | musl | Lightweight libc; no desktop profiles |
 | `musl-llvm` | Clang/LLVM | musl | Experimental combo |
 | `musl-hardened` | GCC | musl | Hardened + musl |
-| `musl-llvm-hardened` | GCC + LLVM | musl | Most experimental; LLVM installed on top of hardened+musl |
+| `musl-llvm-hardened` | Clang/LLVM | musl | Most experimental; hardened applied via make.conf on top of musl-llvm profile |
 
 > **Note:** Non-standard variants are experimental. Binary packages are not available — everything is compiled from source. Desktop profiles (KDE, GNOME) are only available for the standard variant; other variants use auto-assigned base profiles.
+
+> **Warning — LLVM variants broken:** `sys-libs/binutils-libs-2.45-r1` OOMs during configure with any tested LLVM version ([Gentoo bug #965718](https://bugs.gentoo.org/965718)). Do not use `llvm`, `musl-llvm`, or `musl-llvm-hardened` variants until upstream fixes this.
 
 ## Disk Layout
 
@@ -271,7 +275,7 @@ All EFI binaries live in `/boot/EFI/gentoo/`. `grub-install` is **not** used —
 | **Kernel module signing** | `MODULES_SIGN_HASH=sha512` with sbctl keys; unsigned modules rejected |
 | **TPM2 auto-unlock** | systemd: `systemd-cryptenroll` / OpenRC: `clevis` — binds LUKS to PCR 7 (Secure Boot state) |
 | **SELinux** | Optional MAC for hardened variant; targeted/strict/mls policy types; boots permissive, user switches to enforcing after relabeling |
-| **Hardened CFLAGS** | `-fstack-protector-strong -D_FORTIFY_SOURCE=2` + `hardened pie ssp` USE flags (hardened variants) |
+| **Hardened CFLAGS** | `-fstack-protector-strong -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection` + `hardened pie ssp` USE flags; musl variants omit `FORTIFY_SOURCE`, LLVM variants omit `GLIBCXX_ASSERTIONS` |
 | **GRUB password** | PBKDF2-hashed password prevents editing boot entries (boot menu remains accessible) |
 | **Suspend-to-idle** | `mem_sleep_default=s2idle` in kernel cmdline forces S0ix sleep (modern hardware default) |
 | **Hibernation disabled** | systemd: `hibernate.target` masked; both: s2idle default prevents accidental hibernate |
@@ -284,7 +288,7 @@ All EFI binaries live in `/boot/EFI/gentoo/`. `grub-install` is **not** used —
 The generated `/etc/portage/make.conf` includes:
 
 ```
-COMMON_FLAGS="-march=native -O2 -pipe [-fstack-protector-strong [-D_FORTIFY_SOURCE=2]] -flto[=thin]"
+COMMON_FLAGS="-march=native -O2 -pipe [-fstack-protector-strong [-D_FORTIFY_SOURCE=3] [-D_GLIBCXX_ASSERTIONS] -fstack-clash-protection] -flto[=thin]"
              # GCC variants:  -flto   LLVM variants: -flto=thin
 MAKEOPTS="-j$(nproc) -l$(nproc)"
 EMERGE_DEFAULT_OPTS="--jobs <dynamic> --load-average $(nproc)"
@@ -312,7 +316,7 @@ Kernel: `gentoo-kernel-bin` (with binhost) or `gentoo-kernel` (source-based), `l
 
 Networking: `NetworkManager`, `chrony`, `dhcpcd`, `wpa_supplicant`, `iw`
 
-Utilities: `mlocate`, `sudo`, `genfstab`
+Utilities: `plocate`, `sudo`, `genfstab`
 - systemd: `zram-generator`
 - OpenRC: `zram-init`
 
