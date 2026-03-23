@@ -85,8 +85,8 @@ if [[ "${1:-}" != "--chroot" ]]; then
         "openrc"  "OpenRC   (traditional init)" "off"
 
     # ---- Installation Type ----
-    ask_radio INSTALL_TYPE "Installation Type" 90 \
-        "Select the installation type:\n(For minimal/base profiles, choose Server)" \
+    ask_radio INSTALL_TYPE "Installation Type" \
+        "Select the installation type:\n(For minimal/base profiles, choose Server)" 90 \
         "desktop" "Desktop  (Plymouth boot splash, Wi-Fi tools — desktop profiles only)" "on"  \
         "server"  "Server   (no splash, no Wi-Fi tools — all profiles available)"       "off"
 
