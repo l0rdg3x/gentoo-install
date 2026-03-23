@@ -715,8 +715,8 @@ KEYWORDS
             *)
                 mkdir -p /etc/portage/env /etc/portage/package.env
                 cat > /etc/portage/env/fortify2.conf <<'ENVGRUB'
-CFLAGS="${CFLAGS//-D_FORTIFY_SOURCE=3/-D_FORTIFY_SOURCE=2}"
-CXXFLAGS="${CXXFLAGS//-D_FORTIFY_SOURCE=3/-D_FORTIFY_SOURCE=2}"
+CFLAGS="$CFLAGS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2"
+CXXFLAGS="$CXXFLAGS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2"
 ENVGRUB
                 echo "sys-boot/grub fortify2.conf" \
                     > /etc/portage/package.env/grub
