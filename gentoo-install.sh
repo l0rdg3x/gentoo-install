@@ -306,16 +306,21 @@ if [[ "${1:-}" != "--chroot" ]]; then
     fi
 
     # ---- Hardened USE Flags ----
-    case "$INSTALL_VARIANT" in
-        hardened|musl-hardened|musl-llvm-hardened)
-            # Hardened variants always include hardened USE flags
-            HARDENED_USE="y"
-            ;;
-        *)
-            ask_yesno HARDENED_USE "Hardened USE Flags" \
-                "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nand compiler hardening (-fstack-protector-strong, -D_FORTIFY_SOURCE=3,\n-D_GLIBCXX_ASSERTIONS, -fstack-clash-protection) without changing\nthe Portage profile.\n\nRecommended for improved security." "n"
-            ;;
-    esac
+    if [[ "$INSTALL_TYPE" == "desktop" ]]; then
+        # Desktop uses default compilation flags
+        HARDENED_USE="n"
+    else
+        case "$INSTALL_VARIANT" in
+            hardened|musl-hardened|musl-llvm-hardened)
+                # Hardened variants always include hardened USE flags
+                HARDENED_USE="y"
+                ;;
+            *)
+                ask_yesno HARDENED_USE "Hardened USE Flags" \
+                    "Enable hardened USE flags?\n\nAdds security-oriented USE flags (hardened, pie, ssp)\nand compiler hardening (-fstack-protector-strong, -D_FORTIFY_SOURCE=3,\n-D_GLIBCXX_ASSERTIONS, -fstack-clash-protection) without changing\nthe Portage profile.\n\nRecommended for improved security." "n"
+                ;;
+        esac
+    fi
 
     # ---- SELinux ----
     if [[ "$INSTALL_VARIANT" == "hardened" ]]; then
@@ -705,23 +710,6 @@ KEYWORDS
 app-crypt/sbctl ~amd64
 sys-boot/mokutil ~amd64
 KEYWORDS
-    fi
-
-    # GRUB does not compile with FORTIFY_SOURCE=3; downgrade to 2
-    if [[ "${HARDENED_USE:-n}" == "y" ]]; then
-        case "$INSTALL_VARIANT" in
-            musl|musl-llvm|musl-hardened|musl-llvm-hardened)
-                ;; # musl has no FORTIFY_SOURCE — nothing to override
-            *)
-                mkdir -p /etc/portage/env /etc/portage/package.env
-                cat > /etc/portage/env/fortify2.conf <<'ENVGRUB'
-CFLAGS="$CFLAGS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2"
-CXXFLAGS="$CXXFLAGS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2"
-ENVGRUB
-                echo "sys-boot/grub fortify2.conf" \
-                    > /etc/portage/package.env/grub
-                ;;
-        esac
     fi
 
     echo "[*] [CHROOT] Installing sbctl and generating MOK keys"
