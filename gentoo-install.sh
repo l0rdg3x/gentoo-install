@@ -1258,7 +1258,7 @@ echo "    PCR 7  = Secure Boot state"
 echo "    Enter your LUKS passphrase when prompted."
 echo ""
 
-clevis luks bind -d "$LUKS_DEV" tpm2 '{"pcr_ids":"7"}'
+clevis luks bind -d "$LUKS_DEV" tpm2 '{"pcr_ids":"7","pcr_bank":"sha256"}'
 
 echo ""
 echo "[*] Enrollment complete. Updated keyslots:"
