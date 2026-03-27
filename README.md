@@ -104,6 +104,7 @@ After confirmation, the script runs unattended through two phases:
 17. Pre-configures grub-btrfs paths and `update-grub` wrapper
 18. Creates TPM2 enrollment script (if selected)
 19. Creates SELinux relabeling script (if selected)
+20. Creates BIOS recovery script (always)
 
 ### 4. Finalize
 
@@ -160,6 +161,18 @@ This relabels the entire filesystem with correct SELinux contexts. After relabel
 To temporarily test enforcing without making it permanent: `sudo setenforce 1`
 
 If enforcing mode causes problems, add `enforcing=0` to the kernel command line to force permissive mode.
+
+### BIOS recovery (after firmware update)
+
+A BIOS/UEFI firmware update typically erases all custom EFI boot entries and invalidates the MOK enrollment. To restore Gentoo boot:
+
+```bash
+sudo /usr/local/sbin/gentoo-bios-recovery.sh
+```
+
+This re-creates the UEFI boot entry via `efibootmgr` and, if Secure Boot was enabled during install, re-enrolls the MOK key via `mokutil` (you will be prompted to set a one-time password for MokManager).
+
+After running the script, reboot. If Secure Boot was enabled, MokManager will launch — enroll the MOK key with the password you just set, then reboot again.
 
 ### grub-btrfs (snapshot boot entries)
 
@@ -334,6 +347,7 @@ SELinux (if enabled): `libselinux`, `policycoreutils`, `checkpolicy`, `selinux-b
 | Network errors during stage3 download | Check internet connection; try a different mirror |
 | LUKS open fails | Double-check passphrase; ensure partition exists |
 | Secure Boot not working after reboot | Make sure you enrolled the MOK key in MokManager and enabled Secure Boot in UEFI settings |
+| Boot entry missing after BIOS update | Run `sudo /usr/local/sbin/gentoo-bios-recovery.sh` to restore the EFI entry and re-enroll MOK |
 | TPM2 enrollment fails | Must be run after a real boot (not from chroot); ensure `tpm2-tools` is installed and TPM2 device exists |
 | GRUB config not updating | Use `update-grub` instead of `grub-mkconfig` directly |
 | Kernel modules fail signature check | Rebuild kernel with `emerge @module-rebuild` after MOK enrollment |

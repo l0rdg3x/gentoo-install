@@ -403,6 +403,7 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
 | `/usr/local/sbin/gentoo-tpm-enroll.sh` | TPM2 LUKS enrollment (run post-boot) |
 | `/etc/selinux/config` | SELinux mode and policy type (if SELinux enabled) |
 | `/usr/local/sbin/gentoo-selinux-relabel.sh` | SELinux filesystem relabeling (run post-boot) |
+| `/usr/local/sbin/gentoo-bios-recovery.sh` | Restore EFI boot entry + MOK after BIOS update |
 
 ---
 
@@ -419,8 +420,9 @@ Features and USE flags are accumulated into `EXTRA_USE` and `EXTRA_FEATURES` str
    # OpenRC:
    rc-update add grub-btrfsd default && rc-service grub-btrfsd start
    ```
-5. **System update**: `emerge --update --deep --newuse @world`
-6. **Networking**: `iw`, `wpa_supplicant`, `dhcpcd`, and `NetworkManager` are pre-installed.
+5. **BIOS recovery**: After a BIOS/UEFI firmware update, run `sudo /usr/local/sbin/gentoo-bios-recovery.sh` to restore the EFI boot entry and re-enroll MOK keys (if Secure Boot was enabled).
+6. **System update**: `emerge --update --deep --newuse @world`
+7. **Networking**: `iw`, `wpa_supplicant`, `dhcpcd`, and `NetworkManager` are pre-installed.
 
 ---
 

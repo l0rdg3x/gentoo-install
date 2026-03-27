@@ -1353,6 +1353,83 @@ SELINUXRELABEL
     fi
 
     # =========================================================================
+    # BIOS RECOVERY SCRIPT (re-creates EFI boot entry + MOK after BIOS update)
+    # =========================================================================
+    echo "[*] [CHROOT] Creating BIOS recovery script"
+    cat > /usr/local/sbin/gentoo-bios-recovery.sh <<BIOSRECOVERY_HEAD
+#!/usr/bin/env bash
+# =============================================================================
+# BIOS recovery — run after a BIOS/UEFI firmware update
+#
+# A BIOS update typically erases all custom UEFI boot entries and invalidates
+# the MOK (Machine Owner Key) enrollment. This script re-creates the Gentoo
+# EFI boot entry and re-enrolls the MOK certificate so Secure Boot works again.
+#
+# Usage:  sudo /usr/local/sbin/gentoo-bios-recovery.sh
+# =============================================================================
+set -euo pipefail
+
+if [[ \$EUID -ne 0 ]]; then
+    echo "[!] Must run as root."
+    exit 1
+fi
+
+DISK="$DISK_INSTALL"
+
+echo "[*] Re-creating UEFI boot entry for Gentoo Linux on \$DISK"
+efibootmgr --create \\
+    --disk "\$DISK" \\
+    --part 1 \\
+    --loader '\\EFI\\gentoo\\shimx64.efi' \\
+    --label "Gentoo Linux" \\
+    --unicode
+
+echo "[*] Current UEFI boot entries:"
+efibootmgr -v
+BIOSRECOVERY_HEAD
+
+    if [[ "$SECUREBOOT_MODSIGN" == "y" ]]; then
+        cat >> /usr/local/sbin/gentoo-bios-recovery.sh <<'BIOSRECOVERY_MOK'
+
+echo ""
+echo "[*] Re-enrolling MOK key for Secure Boot..."
+if [[ ! -f /var/lib/sbctl/keys/db/db.pem ]]; then
+    echo "[!] MOK certificate not found at /var/lib/sbctl/keys/db/db.pem"
+    echo "[!] Secure Boot key enrollment skipped."
+    exit 1
+fi
+
+openssl x509 \
+    -in  /var/lib/sbctl/keys/db/db.pem \
+    -inform PEM \
+    -out /var/lib/sbctl/keys/db/db.der \
+    -outform DER
+
+echo "[*] Importing MOK key — you will be asked to set a one-time password."
+echo "[*] Use this same password in MokManager after reboot."
+mokutil --import /var/lib/sbctl/keys/db/db.der
+
+echo ""
+echo "[*] MOK key enrolled. Next steps:"
+echo "    1. Reboot the system"
+echo "    2. MokManager will launch automatically"
+echo "    3. Select 'Enroll MOK' → 'Continue' → 'Yes'"
+echo "    4. Enter the password you just set"
+echo "    5. Reboot again, then enable Secure Boot in UEFI firmware settings"
+BIOSRECOVERY_MOK
+    else
+        cat >> /usr/local/sbin/gentoo-bios-recovery.sh <<'BIOSRECOVERY_TAIL'
+
+echo ""
+echo "[*] Done. The UEFI boot entry has been restored."
+echo "[*] Reboot and select 'Gentoo Linux' from the UEFI boot menu."
+BIOSRECOVERY_TAIL
+    fi
+
+    chmod +x /usr/local/sbin/gentoo-bios-recovery.sh
+    echo "[*] [CHROOT] BIOS recovery script created at /usr/local/sbin/gentoo-bios-recovery.sh"
+
+    # =========================================================================
     # USERS
     # =========================================================================
     echo "[*] [CHROOT] Setting up users"
