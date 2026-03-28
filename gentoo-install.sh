@@ -811,6 +811,9 @@ SELINUXCONF
         LUKS_UUID=$(blkid -s UUID -o value "$ROOT_PART")
         ROOT_DEV="/dev/mapper/root"
         echo "root  UUID=$LUKS_UUID  none  luks,discard" > /etc/crypttab
+        if [[ "$INIT_SYSTEM" == "openrc" && "${TPM_UNLOCK:-n}" == "y" ]]; then
+            sed -i 's/  none  /  -  /' /etc/crypttab
+        fi
     else
         ROOT_DEV="$ROOT_PART"
     fi
@@ -1142,9 +1145,10 @@ POSTINST
 #!/usr/bin/env bash
 # =============================================================================
 # TPM2 LUKS enrollment script — run ONCE after first successful boot
-# Binds the LUKS decryption key to TPM2 PCR 7.
+# Binds the LUKS decryption key to TPM2 PCR 7+14.
 #
 # PCR 7  = Secure Boot state (firmware certs + SB on/off)
+# PCR 14 = shim/MOK policy state
 #
 # Fallback: the LUKS passphrase always works even if TPM unlock fails.
 # =============================================================================
@@ -1173,8 +1177,9 @@ echo "[*] Current LUKS keyslots:"
 systemd-cryptenroll "$LUKS_DEV"
 
 echo ""
-echo "[*] Enrolling TPM2 key bound to PCR 7"
+echo "[*] Enrolling TPM2 key bound to PCR 7+14"
 echo "    PCR 7  = Secure Boot state"
+echo "    PCR 14 = shim/MOK policy state"
 echo "    Enter your LUKS passphrase when prompted."
 echo ""
 TPMENROLL_BODY
@@ -1182,7 +1187,7 @@ TPMENROLL_BODY
             cat >> /usr/local/sbin/gentoo-tpm-enroll.sh <<'TPMENROLL_NOPIN'
 systemd-cryptenroll \
     --tpm2-device=auto \
-    --tpm2-pcrs=7 \
+    --tpm2-pcrs=7+14 \
     "$LUKS_DEV"
 TPMENROLL_NOPIN
 
@@ -1222,9 +1227,10 @@ TPMENROLL_TAIL
 #!/usr/bin/env bash
 # =============================================================================
 # TPM2 LUKS enrollment script (clevis) — run ONCE after first successful boot
-# Binds the LUKS decryption key to TPM2 PCR 7.
+# Binds the LUKS decryption key to TPM2 PCR 7+14.
 #
 # PCR 7  = Secure Boot state (firmware certs + SB on/off)
+# PCR 14 = shim/MOK policy state
 #
 # Fallback: the LUKS passphrase always works even if TPM unlock fails.
 # =============================================================================
@@ -1253,12 +1259,13 @@ echo "[*] Current LUKS keyslots:"
 cryptsetup luksDump "$LUKS_DEV"
 
 echo ""
-echo "[*] Enrolling TPM2 key bound to PCR 7 using clevis"
+echo "[*] Enrolling TPM2 key bound to PCR 7+14 using clevis"
 echo "    PCR 7  = Secure Boot state"
+echo "    PCR 14 = shim/MOK policy state"
 echo "    Enter your LUKS passphrase when prompted."
 echo ""
 
-clevis luks bind -d "$LUKS_DEV" tpm2 '{"pcr_ids":"7","pcr_bank":"sha256"}'
+clevis luks bind -d "$LUKS_DEV" tpm2 '{"pcr_ids":"7,14","pcr_bank":"sha256"}'
 
 echo ""
 echo "[*] Enrollment complete. Updated keyslots:"

@@ -202,8 +202,8 @@ TPM2 enrollment **cannot** happen during install (PCR values are invalid in chro
 sudo /usr/local/sbin/gentoo-tpm-enroll.sh
 ```
 
-- **systemd**: Uses `systemd-cryptenroll` to bind the LUKS key to PCR 7 (Secure Boot state). Installs `tpm2-tools` and `tpm2-tss`.
-- **OpenRC**: Uses `clevis luks bind` with `tpm2` pin (PCR 7). Installs `clevis` and `tpm2-tools` from the GURU overlay.
+- **systemd**: Uses `systemd-cryptenroll` to bind the LUKS key to PCR 7+14 (Secure Boot state + shim/MOK policy). Installs `tpm2-tools` and `tpm2-tss`.
+- **OpenRC**: Uses `clevis luks bind` with `tpm2` pin (PCR 7+14). Installs `clevis` and `tpm2-tools` from the GURU overlay.
 
 The LUKS passphrase always works as a fallback.
 
