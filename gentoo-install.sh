@@ -704,6 +704,7 @@ sys-kernel/gentoo-kernel ~amd64
 virtual/dist-kernel ~amd64
 sys-kernel/linux-firmware ~amd64
 sys-firmware/sof-firmware ~amd64
+sys-kernel/linux-headers ~amd64
 sys-firmware/intel-microcode ~amd64
 KEYWORDS
     else
